@@ -28,10 +28,10 @@ Evaluate the approved model-behavior hypotheses on a bounded three-domain coding
 - [x] Run `npm run test --workspace @earendil-works/pi-coding-agent -- system-prompt.test.ts` and repair until it passes
 
 ### Task 4: Full validation and cleanup
-- [ ] Run `npm run check && npm test`
-- [ ] Run `npm run test --workspace @earendil-works/pi-agent-core -- behavior-efficiency.test.ts` again from the final worktree and verify the locked acceptance evidence
-- [ ] Remove only speculative or non-winning runtime code while preserving tests and evidence needed to explain rejected hypotheses
-- [ ] Run `npm run check && npm test` again after cleanup
+- [ ] Run `npm run check && npm test` (blocked by the pre-existing private `SessionManager.fileEntries` error and unrelated Ollama E2E timeouts)
+- [x] Run `timeout 900 node /tmp/live-behavior-benchmark.mjs > /tmp/live-behavior-benchmark.json` and verify the real three-domain acceptance evidence
+- [x] Remove speculative and non-winning runtime/benchmark code; the final net diff contains only the locked internal artifacts
+- [ ] Run `npm run check && npm test` again after cleanup (same baseline blockers remain)
 
 ## Success criteria
 - [x] Every approved hypothesis is tested or explicitly recorded as unsupported/unavailable without fabricated evidence
