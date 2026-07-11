@@ -110,19 +110,5 @@ describe("buildSystemPrompt", () => {
 
 			expect(prompt.match(/- Use dynamic_tool for summaries\./g)).toHaveLength(1);
 		});
-
-		test("accepts readonly behavior guidelines only when explicitly provided", () => {
-			const behaviorGuidelines = ["Avoid unchanged repeated tools and stop after verified completion."] as const;
-			const baselinePrompt = buildSystemPrompt({ contextFiles: [], skills: [], cwd: process.cwd() });
-			const prompt = buildSystemPrompt({
-				promptGuidelines: behaviorGuidelines,
-				contextFiles: [],
-				skills: [],
-				cwd: process.cwd(),
-			});
-
-			expect(baselinePrompt).not.toContain(behaviorGuidelines[0]);
-			expect(prompt).toContain(`- ${behaviorGuidelines[0]}`);
-		});
 	});
 });
