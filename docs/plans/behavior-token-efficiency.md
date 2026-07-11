@@ -10,9 +10,9 @@ Evaluate the approved model-behavior hypotheses on a bounded three-domain coding
 
 ### Task 1: Establish behavior-policy and benchmark contracts
 - [ ] Add focused failing tests for the smallest internal behavior-policy surface and metric/acceptance calculations described in `docs/autodev/behavior-token-efficiency/spec.md`
-- [ ] Run `npm run test --workspace @earendil-works/pi-agent-core -- --run packages/agent/test/agent-loop.test.ts` and observe the expected failure
+- [ ] Run `npm run test --workspace @earendil-works/pi-agent-core -- agent-loop.test.ts` and observe the expected failure
 - [ ] Implement the smallest contract-compliant policy/measurement types using existing prompt, loop, and thinking-level surfaces
-- [ ] Run `npm run test --workspace @earendil-works/pi-agent-core -- --run packages/agent/test/agent-loop.test.ts` and repair until it passes
+- [ ] Run `npm run test --workspace @earendil-works/pi-agent-core -- agent-loop.test.ts` and repair until it passes
 
 ### Task 2: Test candidate behaviors across bounded task domains
 - [ ] Add failing tests for three synthetic task domains, baseline/variant isolation, objective success oracles, and token/turn/tool/retry metric collection
@@ -23,9 +23,9 @@ Evaluate the approved model-behavior hypotheses on a bounded three-domain coding
 
 ### Task 3: Integrate only validated behavior
 - [ ] Add regression tests proving the selected behavior changes affect only approved prompt/thinking surfaces and fail open to existing behavior
-- [ ] Run `npm run test --workspace @earendil-works/pi-coding-agent -- --run` and observe the expected failure
+- [ ] Run `npm run test --workspace @earendil-works/pi-coding-agent -- system-prompt.test.ts` and observe the expected failure
 - [ ] Integrate only candidates that meet the 15% median-token and 2-point success-rate thresholds; leave non-passing candidates out of runtime behavior
-- [ ] Run `npm run test --workspace @earendil-works/pi-coding-agent -- --run` and repair until it passes
+- [ ] Run `npm run test --workspace @earendil-works/pi-coding-agent -- system-prompt.test.ts` and repair until it passes
 
 ### Task 4: Full validation and cleanup
 - [ ] Run `npm run check && npm test`
