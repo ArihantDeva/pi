@@ -13,7 +13,7 @@ export interface BuildSystemPromptOptions {
 	/** Optional one-line tool snippets keyed by tool name. */
 	toolSnippets?: Record<string, string>;
 	/** Additional guideline bullets appended to the default system prompt guidelines. */
-	promptGuidelines?: string[];
+	promptGuidelines?: readonly string[];
 	/** Text to append to system prompt. */
 	appendSystemPrompt?: string;
 	/** Working directory. */

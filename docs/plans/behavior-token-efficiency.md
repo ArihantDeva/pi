@@ -22,10 +22,10 @@ Evaluate the approved model-behavior hypotheses on a bounded three-domain coding
 - [x] Repair benchmark/test failures without relaxing the locked acceptance thresholds
 
 ### Task 3: Integrate only validated behavior
-- [ ] Add regression tests proving the selected behavior changes affect only approved prompt/thinking surfaces and fail open to existing behavior
-- [ ] Run `npm run test --workspace @earendil-works/pi-coding-agent -- system-prompt.test.ts` and observe the expected failure
-- [ ] Integrate only candidates that meet the 15% median-token and 2-point success-rate thresholds; leave non-passing candidates out of runtime behavior
-- [ ] Run `npm run test --workspace @earendil-works/pi-coding-agent -- system-prompt.test.ts` and repair until it passes
+- [x] Add regression tests proving the selected behavior changes affect only approved prompt/thinking surfaces and fail open to existing behavior
+- [x] Run `npm run test --workspace @earendil-works/pi-coding-agent -- system-prompt.test.ts` and observe the expected failure
+- [x] Integrate only candidates that meet the 15% median-token and 2-point success-rate thresholds; leave non-passing candidates out of runtime behavior
+- [x] Run `npm run test --workspace @earendil-works/pi-coding-agent -- system-prompt.test.ts` and repair until it passes
 
 ### Task 4: Full validation and cleanup
 - [ ] Run `npm run check && npm test`
@@ -35,6 +35,6 @@ Evaluate the approved model-behavior hypotheses on a bounded three-domain coding
 
 ## Success criteria
 - [x] Every approved hypothesis is tested or explicitly recorded as unsupported/unavailable without fabricated evidence
-- [ ] Only behavior meeting the locked acceptance threshold is integrated
+- [x] Only behavior meeting the locked acceptance threshold is integrated
 - [ ] `npm run check && npm test` passes in this worktree
 - [x] No unapproved core decision or out-of-scope change was made
