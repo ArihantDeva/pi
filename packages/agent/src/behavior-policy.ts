@@ -55,7 +55,7 @@ function successfulTokenTotals(measurements: readonly BehaviorMeasurement[]): nu
 	const successful = measurements.filter((measurement) => measurement.success);
 	if (successful.length === 0) return undefined;
 	const totals = successful.map((measurement) => measurement.totalTokens);
-	return totals.every((total) => typeof total === "number" && Number.isFinite(total))
+	return totals.every((total) => typeof total === "number" && Number.isFinite(total) && total >= 0)
 		? (totals as number[])
 		: undefined;
 }

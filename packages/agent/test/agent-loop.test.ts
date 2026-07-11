@@ -218,7 +218,7 @@ describe("behavior policy contracts", () => {
 		).toMatchObject({ accepted: false, reason: "retry-regression" });
 	});
 
-	it("reports unavailable acceptance when successful measurements lack token totals", () => {
+	it("reports unavailable acceptance when successful measurements lack valid token totals", () => {
 		const measurements: BehaviorMeasurement[] = [
 			{
 				taskId: "one",
@@ -232,6 +232,15 @@ describe("behavior policy contracts", () => {
 		];
 
 		expect(evaluateBehaviorAcceptance(measurements, measurements)).toEqual({
+			accepted: false,
+			reason: "unavailable-token-metrics",
+		});
+		expect(
+			evaluateBehaviorAcceptance(
+				[{ ...measurements[0], totalTokens: 100 }],
+				[{ ...measurements[0], totalTokens: -1 }],
+			),
+		).toEqual({
 			accepted: false,
 			reason: "unavailable-token-metrics",
 		});

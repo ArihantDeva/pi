@@ -9,10 +9,10 @@ Evaluate the approved model-behavior hypotheses on a bounded three-domain coding
 - Locked verification command: `npm run check && npm test`
 
 ### Task 1: Establish behavior-policy and benchmark contracts
-- [ ] Add focused failing tests for the smallest internal behavior-policy surface and metric/acceptance calculations described in `docs/autodev/behavior-token-efficiency/spec.md`
-- [ ] Run `npm run test --workspace @earendil-works/pi-agent-core -- agent-loop.test.ts` and observe the expected failure
-- [ ] Implement the smallest contract-compliant policy/measurement types using existing prompt, loop, and thinking-level surfaces
-- [ ] Run `npm run test --workspace @earendil-works/pi-agent-core -- agent-loop.test.ts` and repair until it passes
+- [x] Add focused failing tests for the smallest internal behavior-policy surface and metric/acceptance calculations described in `docs/autodev/behavior-token-efficiency/spec.md`
+- [x] Run `npm run test --workspace @earendil-works/pi-agent-core -- agent-loop.test.ts` and observe the expected failure
+- [x] Implement the smallest contract-compliant policy/measurement types using existing prompt, loop, and thinking-level surfaces
+- [x] Run `npm run test --workspace @earendil-works/pi-agent-core -- agent-loop.test.ts` and repair until it passes
 
 ### Task 2: Test candidate behaviors across bounded task domains
 - [ ] Add failing tests for three synthetic task domains, baseline/variant isolation, objective success oracles, and token/turn/tool/retry metric collection
@@ -37,4 +37,4 @@ Evaluate the approved model-behavior hypotheses on a bounded three-domain coding
 - [ ] Every approved hypothesis is tested or explicitly recorded as unsupported/unavailable without fabricated evidence
 - [ ] Only behavior meeting the locked acceptance threshold is integrated
 - [ ] `npm run check && npm test` passes in this worktree
-- [ ] No unapproved core decision or out-of-scope change was made
+- [x] No unapproved core decision or out-of-scope change was made
