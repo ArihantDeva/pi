@@ -67,6 +67,34 @@ describe("max thinking level", () => {
 		expect(clampThinkingLevel(model, "xhigh")).toBe("max");
 	});
 
+	it("treats ultra as an opt-in level after max", () => {
+		const model: Model<"openai-completions"> = {
+			id: "max-and-ultra",
+			name: "Max and Ultra",
+			api: "openai-completions",
+			provider: "test",
+			baseUrl: "https://example.com/v1",
+			reasoning: true,
+			thinkingLevelMap: { max: "max", ultra: "ultra" },
+			input: ["text"],
+			cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+			contextWindow: 128000,
+			maxTokens: 4096,
+		};
+
+		expect(getSupportedThinkingLevels(model)).toEqual([
+			"off",
+			"minimal",
+			"low",
+			"medium",
+			"high",
+			"max",
+			"ultra",
+		]);
+		expect(clampThinkingLevel(model, "max")).toBe("max");
+		expect(clampThinkingLevel(model, "ultra")).toBe("ultra");
+	});
+
 	it("sends max to the Codex Responses API", async () => {
 		const model = getModel("openai-codex", "gpt-5.6-sol")!;
 		const context: Context = {
