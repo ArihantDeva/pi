@@ -35,6 +35,18 @@ const mockModels: Model<"anthropic-messages">[] = [
 		contextWindow: 128000,
 		maxTokens: 4096,
 	},
+	{
+		id: "gpt-5.6-sol",
+		name: "GPT-5.6 Sol",
+		api: "openai-codex-responses",
+		provider: "openai-codex",
+		baseUrl: "https://chatgpt.com/backend-api",
+		reasoning: true,
+		input: ["text"],
+		cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+		contextWindow: 372000,
+		maxTokens: 128000,
+	},
 ];
 
 // Mock OpenRouter models with colons in IDs
@@ -107,12 +119,19 @@ describe("parseModelPattern", () => {
 		});
 
 		test("all valid thinking levels work", () => {
-			for (const level of ["off", "minimal", "low", "medium", "high", "xhigh", "max"]) {
+			for (const level of ["off", "minimal", "low", "medium", "high", "xhigh", "max", "ultra"]) {
 				const result = parseModelPattern(`sonnet:${level}`, allModels);
 				expect(result.model?.id).toBe("claude-sonnet-4-5");
 				expect(result.thinkingLevel).toBe(level);
 				expect(result.warning).toBeUndefined();
 			}
+		});
+
+		test("provider-qualified Codex GPT-5.6 shorthand accepts ultra", () => {
+			const result = parseModelPattern("openai-codex/gpt-5.6-sol:ultra", allModels);
+			expect(result.model?.id).toBe("gpt-5.6-sol");
+			expect(result.thinkingLevel).toBe("ultra");
+			expect(result.warning).toBeUndefined();
 		});
 	});
 
