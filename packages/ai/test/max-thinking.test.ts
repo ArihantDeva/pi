@@ -30,23 +30,28 @@ describe("max thinking level", () => {
 		expect(clampThinkingLevel(model, "max")).toBe("high");
 	});
 
-	it.each(["gpt-5.6-luna", "gpt-5.6-sol", "gpt-5.6-terra"] as const)(
-		"exposes xhigh and max for openai-codex/%s",
-		(modelId) => {
-			const model = getModel("openai-codex", modelId);
-			expect(model).toBeDefined();
-			expect(model?.thinkingLevelMap).toMatchObject({ xhigh: "xhigh", max: "max" });
-			expect(getSupportedThinkingLevels(model!)).toEqual([
-				"off",
-				"minimal",
-				"low",
-				"medium",
-				"high",
-				"xhigh",
-				"max",
-			]);
-		},
-	);
+	it.each(["gpt-5.6-sol", "gpt-5.6-terra"] as const)("exposes ultra for Codex %s", (modelId) => {
+		const model = getModel("openai-codex", modelId);
+		expect(model).toBeDefined();
+		expect(model?.thinkingLevelMap).toMatchObject({ xhigh: "xhigh", max: "max", ultra: "ultra" });
+		expect(getSupportedThinkingLevels(model!)).toEqual([
+			"off",
+			"minimal",
+			"low",
+			"medium",
+			"high",
+			"xhigh",
+			"max",
+			"ultra",
+		]);
+	});
+
+	it("does not expose ultra for Codex Luna", () => {
+		const model = getModel("openai-codex", "gpt-5.6-luna");
+		expect(model).toBeDefined();
+		expect(model?.thinkingLevelMap?.ultra).toBeUndefined();
+		expect(getSupportedThinkingLevels(model!)).not.toContain("ultra");
+	});
 
 	it("supports a hole between high and max", () => {
 		const model: Model<"openai-completions"> = {
@@ -113,5 +118,25 @@ describe("max thinking level", () => {
 		}).result();
 
 		expect(payload).toMatchObject({ reasoning: { effort: "max", summary: "auto" } });
+	});
+
+	it("sends ultra to the Codex Responses API", async () => {
+		const model = getModel("openai-codex", "gpt-5.6-sol")!;
+		const context: Context = {
+			systemPrompt: "You are a helpful assistant.",
+			messages: [{ role: "user", content: "Hello", timestamp: Date.now() }],
+		};
+		let payload: unknown;
+
+		await streamSimpleOpenAICodexResponses(model, context, {
+			apiKey: mockToken(),
+			reasoning: "ultra",
+			onPayload: (request) => {
+				payload = request;
+				throw new Error("payload captured");
+			},
+		}).result();
+
+		expect(payload).toMatchObject({ reasoning: { effort: "ultra", summary: "auto" } });
 	});
 });
