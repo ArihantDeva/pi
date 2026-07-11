@@ -15,10 +15,10 @@ Evaluate the approved model-behavior hypotheses on a bounded three-domain coding
 - [x] Run `npm run test --workspace @earendil-works/pi-agent-core -- agent-loop.test.ts` and repair until it passes
 
 ### Task 2: Test candidate behaviors across bounded task domains
-- [ ] Add failing tests for three synthetic task domains, baseline/variant isolation, objective success oracles, and token/turn/tool/retry metric collection
-- [ ] Run the focused benchmark test command and observe the expected failure
+- [ ] Add failing tests in `packages/agent/test/behavior-efficiency.test.ts` for three synthetic task domains, baseline/variant isolation, objective success oracles, and token/turn/tool/retry metric collection
+- [ ] Run `npm run test --workspace @earendil-works/pi-agent-core -- behavior-efficiency.test.ts` and observe the expected failure
 - [ ] Implement a bounded no-dependency benchmark runner using existing test/CLI/provider seams; include all hypotheses from the internal spec without expanding beyond three domains
-- [ ] Run the exact bounded benchmark command and record candidate results, unavailable-provider states, and failure reasons
+- [ ] Run `npm run test --workspace @earendil-works/pi-agent-core -- behavior-efficiency.test.ts` and record candidate results, unavailable-provider states, and failure reasons
 - [ ] Repair benchmark/test failures without relaxing the locked acceptance thresholds
 
 ### Task 3: Integrate only validated behavior
@@ -29,7 +29,7 @@ Evaluate the approved model-behavior hypotheses on a bounded three-domain coding
 
 ### Task 4: Full validation and cleanup
 - [ ] Run `npm run check && npm test`
-- [ ] Run the bounded benchmark command again from the final worktree and verify the locked acceptance evidence
+- [ ] Run `npm run test --workspace @earendil-works/pi-agent-core -- behavior-efficiency.test.ts` again from the final worktree and verify the locked acceptance evidence
 - [ ] Remove only speculative or non-winning runtime code while preserving tests and evidence needed to explain rejected hypotheses
 - [ ] Run `npm run check && npm test` again after cleanup
 
