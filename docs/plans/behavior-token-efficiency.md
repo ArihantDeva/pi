@@ -15,11 +15,11 @@ Evaluate the approved model-behavior hypotheses on a bounded three-domain coding
 - [x] Run `npm run test --workspace @earendil-works/pi-agent-core -- agent-loop.test.ts` and repair until it passes
 
 ### Task 2: Test candidate behaviors across bounded task domains
-- [ ] Add failing tests in `packages/agent/test/behavior-efficiency.test.ts` for three synthetic task domains, baseline/variant isolation, objective success oracles, and token/turn/tool/retry metric collection
-- [ ] Run `npm run test --workspace @earendil-works/pi-agent-core -- behavior-efficiency.test.ts` and observe the expected failure
-- [ ] Implement a bounded no-dependency benchmark runner using existing test/CLI/provider seams; include all hypotheses from the internal spec without expanding beyond three domains
-- [ ] Run `npm run test --workspace @earendil-works/pi-agent-core -- behavior-efficiency.test.ts` and record candidate results, unavailable-provider states, and failure reasons
-- [ ] Repair benchmark/test failures without relaxing the locked acceptance thresholds
+- [x] Add failing tests in `packages/agent/test/behavior-efficiency.test.ts` for three synthetic task domains, baseline/variant isolation, objective success oracles, and token/turn/tool/retry metric collection
+- [x] Run `npm run test --workspace @earendil-works/pi-agent-core -- behavior-efficiency.test.ts` and observe the expected failure
+- [x] Implement a bounded no-dependency benchmark runner using existing test/CLI/provider seams; include all hypotheses from the internal spec without expanding beyond three domains
+- [x] Run `npm run test --workspace @earendil-works/pi-agent-core -- behavior-efficiency.test.ts` and record candidate results, unavailable-provider states, and failure reasons
+- [x] Repair benchmark/test failures without relaxing the locked acceptance thresholds
 
 ### Task 3: Integrate only validated behavior
 - [ ] Add regression tests proving the selected behavior changes affect only approved prompt/thinking surfaces and fail open to existing behavior
@@ -34,7 +34,7 @@ Evaluate the approved model-behavior hypotheses on a bounded three-domain coding
 - [ ] Run `npm run check && npm test` again after cleanup
 
 ## Success criteria
-- [ ] Every approved hypothesis is tested or explicitly recorded as unsupported/unavailable without fabricated evidence
+- [x] Every approved hypothesis is tested or explicitly recorded as unsupported/unavailable without fabricated evidence
 - [ ] Only behavior meeting the locked acceptance threshold is integrated
 - [ ] `npm run check && npm test` passes in this worktree
 - [x] No unapproved core decision or out-of-scope change was made
