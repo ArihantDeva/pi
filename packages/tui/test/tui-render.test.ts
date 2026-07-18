@@ -10,6 +10,7 @@ import {
 	setCellDimensions,
 } from "../src/terminal-image.ts";
 import { type Component, TUI } from "../src/tui.ts";
+import { visibleWidth } from "../src/utils.ts";
 import { VirtualTerminal } from "./virtual-terminal.ts";
 
 class TestComponent implements Component {
@@ -322,6 +323,26 @@ describe("TUI Kitty image cleanup", () => {
 });
 
 describe("TUI resize handling", () => {
+	it("clamps over-wide component output instead of crashing", async () => {
+		const terminal = new VirtualTerminal(61, 10);
+		const tui = new TUI(terminal);
+		const component = new TestComponent();
+		tui.addChild(component);
+
+		component.lines = ["ok"];
+		tui.start();
+		await terminal.waitForRender();
+
+		component.lines = [
+			`\x1b[38;2;138;190;183m\x1b[1m❯ 4. I want you to do none of these. I want you to tell me ho▌\x1b[22m\x1b[39m`,
+		];
+		tui.requestRender();
+		await terminal.waitForRender();
+
+		assert.ok(visibleWidth(terminal.getViewport()[0] ?? "") <= 61);
+		tui.stop();
+	});
+
 	it("triggers full re-render when terminal height changes", async () => {
 		await withEnv({ TERMUX_VERSION: undefined }, async () => {
 			const terminal = new VirtualTerminal(40, 10);

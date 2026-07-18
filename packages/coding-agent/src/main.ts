@@ -575,7 +575,7 @@ export async function main(args: string[], options?: MainOptions) {
 		(envSessionDir ? expandTildePath(envSessionDir) : undefined) ??
 		startupSettingsManager.getSessionDir();
 	let sessionManager = await createSessionManager(parsed, cwd, sessionDir, startupSettingsManager);
-	if (sessionManager.fileEntries.length === 1 && startupSettingsManager.getGlobalSettings().autoUpdateOnNewSession) {
+	if (sessionManager.getEntries().length === 0 && startupSettingsManager.getGlobalSettings().autoUpdateOnNewSession) {
 		await handlePackageCommand(["update", "--all"], { extensionFactories: options?.extensionFactories });
 	}
 	const missingSessionCwdIssue = getMissingSessionCwdIssue(sessionManager, cwd);
@@ -621,6 +621,7 @@ export async function main(args: string[], options?: MainOptions) {
 		sessionManager,
 		sessionStartEvent,
 		projectTrustContext,
+		model: previousModel,
 	}) => {
 		const isInitialRuntime = sessionStartEvent === undefined;
 		const projectTrustDiagnostics: AgentSessionRuntimeDiagnostic[] = [];
@@ -721,7 +722,7 @@ export async function main(args: string[], options?: MainOptions) {
 			services,
 			sessionManager,
 			sessionStartEvent,
-			model: sessionOptions.model,
+			model: previousModel ?? sessionOptions.model,
 			thinkingLevel: sessionOptions.thinkingLevel,
 			scopedModels: sessionOptions.scopedModels,
 			tools: sessionOptions.tools,
