@@ -4,7 +4,14 @@ import { tmpdir } from "os";
 import { join } from "path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { executeBashWithOperations } from "../src/core/bash-executor.ts";
-import { type BashOperations, createBashTool, createLocalBashOperations } from "../src/core/tools/bash.ts";
+import {
+	type BashOperations,
+	createBashTool,
+	createLocalBashOperations,
+	DEFAULT_BASH_TIMEOUT_MS,
+	validateCdTargetSpawnHook,
+	validateCommandExistsSpawnHook,
+} from "../src/core/tools/bash.ts";
 import { computeEditsDiff } from "../src/core/tools/edit-diff.ts";
 import {
 	createEditTool,
@@ -483,6 +490,110 @@ describe("Coding Agent Tools", () => {
 			await expect(bashTool.execute("test-call-9", { command: "exit 1" })).rejects.toThrow(
 				/(Command failed|code 1)/,
 			);
+		});
+
+		it("should not inspect separators or quoted text as commands", () => {
+			const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+			try {
+				validateCommandExistsSpawnHook({
+					command: 'printf "%s" "not-a-command; still-not-a-command | also-not-a-command" && pwd',
+					cwd: testDir,
+					env: { PATH: process.env.PATH },
+				});
+				expect(warn).not.toHaveBeenCalled();
+			} finally {
+				warn.mockRestore();
+			}
+		});
+
+		it("should skip assignments and redirections before a command", () => {
+			const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+			try {
+				validateCommandExistsSpawnHook({
+					command: "FOO=bar 2>/tmp/bash-tool-test-output echo ok",
+					cwd: testDir,
+					env: { PATH: process.env.PATH },
+				});
+				expect(warn).not.toHaveBeenCalled();
+			} finally {
+				warn.mockRestore();
+			}
+		});
+
+		it("should not validate cd text inside quotes", () => {
+			expect(() =>
+				validateCdTargetSpawnHook({
+					command: 'echo "cd /definitely-missing-directory-xyz"',
+					cwd: testDir,
+					env: {},
+				}),
+			).not.toThrow();
+		});
+
+		it("should ignore cd text inside shell comments", () => {
+			expect(() =>
+				validateCdTargetSpawnHook({
+					command: "echo ok; # comment; cd /definitely-missing-directory-xyz",
+					cwd: testDir,
+					env: {},
+				}),
+			).not.toThrow();
+		});
+
+		it("should accept a quoted existing cd target", () => {
+			expect(
+				validateCdTargetSpawnHook({
+					command: 'cd "./" && pwd',
+					cwd: testDir,
+					env: {},
+				}),
+			).toMatchObject({ command: 'cd "./" && pwd' });
+		});
+
+		it("should warn once for an unresolved command in a chain", () => {
+			const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+			try {
+				validateCommandExistsSpawnHook({
+					command: "echo ok && definitely-missing-command-xyz",
+					cwd: testDir,
+					env: { PATH: process.env.PATH },
+				});
+				expect(warn).toHaveBeenCalledTimes(1);
+				expect(warn.mock.calls[0]?.[0]).toContain("definitely-missing-command-xyz");
+			} finally {
+				warn.mockRestore();
+			}
+		});
+
+		it("should use the default timeout when one is omitted", async () => {
+			let receivedTimeout: number | undefined;
+			const bash = createBashTool(testDir, {
+				operations: {
+					exec: async (_command, _cwd, options) => {
+						receivedTimeout = options.timeout;
+						return { exitCode: 0 };
+					},
+				},
+			});
+
+			await bash.execute("test-call-default-timeout", { command: "echo ok" });
+			expect(receivedTimeout).toBe(DEFAULT_BASH_TIMEOUT_MS / 1000);
+		});
+
+		it("should apply the user spawn hook before built-in diagnostics", async () => {
+			let receivedCommand = "";
+			const bash = createBashTool(testDir, {
+				spawnHook: (context) => ({ ...context, command: "echo rewritten" }),
+				operations: {
+					exec: async (command) => {
+						receivedCommand = command;
+						return { exitCode: 0 };
+					},
+				},
+			});
+
+			await bash.execute("test-call-hook-order", { command: "echo original" });
+			expect(receivedCommand).toBe("echo rewritten");
 		});
 
 		it("should respect timeout", async () => {

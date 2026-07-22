@@ -1,4 +1,4 @@
-import type { Model } from "@earendil-works/pi-ai";
+import type { Api, Model } from "@earendil-works/pi-ai";
 import { describe, expect, test, vi } from "vitest";
 import {
 	defaultModelPerProvider,
@@ -10,7 +10,7 @@ import {
 } from "../src/core/model-resolver.ts";
 
 // Mock models for testing
-const mockModels: Model<"anthropic-messages">[] = [
+const mockModels: Model<Api>[] = [
 	{
 		id: "claude-sonnet-4-5",
 		name: "Claude Sonnet 4.5",
@@ -50,7 +50,7 @@ const mockModels: Model<"anthropic-messages">[] = [
 ];
 
 // Mock OpenRouter models with colons in IDs
-const mockOpenRouterModels: Model<"anthropic-messages">[] = [
+const mockOpenRouterModels: Model<Api>[] = [
 	{
 		id: "qwen/qwen3-coder:exacto",
 		name: "Qwen3 Coder Exacto",

@@ -1,5 +1,6 @@
-import { constants } from "node:fs";
+import fs, { constants } from "node:fs";
 import { access as fsAccess } from "node:fs/promises";
+import path from "node:path";
 import type { AgentTool } from "@earendil-works/pi-agent-core";
 import { Container, Text, truncateToWidth } from "@earendil-works/pi-tui";
 import { spawn } from "child_process";
@@ -39,7 +40,7 @@ function resolveTimeoutMs(timeout: number | undefined): number | undefined {
 
 const bashSchema = Type.Object({
 	command: Type.String({ description: "Bash command to execute" }),
-	timeout: Type.Optional(Type.Number({ description: "Timeout in seconds (optional, no default timeout)" })),
+	timeout: Type.Optional(Type.Number({ description: "Timeout in seconds (default: 60)" })),
 });
 
 export type BashToolInput = Static<typeof bashSchema>;
@@ -159,6 +160,260 @@ function resolveSpawnContext(command: string, cwd: string, spawnHook?: BashSpawn
 	const baseContext: BashSpawnContext = { command, cwd, env: { ...getShellEnv() } };
 	return spawnHook ? spawnHook(baseContext) : baseContext;
 }
+
+function splitTopLevelShellCommands(command: string): string[] {
+	const commands: string[] = [];
+	let current = "";
+	let quote: "'" | '"' | undefined;
+	let comment = false;
+
+	const flush = () => {
+		if (current.trim()) commands.push(current.trim());
+		current = "";
+	};
+
+	for (let i = 0; i < command.length; i++) {
+		const character = command[i];
+		if (comment) {
+			if (character === "\n") {
+				comment = false;
+				flush();
+			}
+			continue;
+		}
+		if (!quote && character === "#" && (i === 0 || /\s/.test(command[i - 1]))) {
+			comment = true;
+			continue;
+		}
+		if (character === "\\" && quote !== "'") {
+			current += character;
+			if (i + 1 < command.length) current += command[++i];
+			continue;
+		}
+		if (quote) {
+			current += character;
+			if (character === quote) quote = undefined;
+			continue;
+		}
+		if (character === "'" || character === '"') {
+			quote = character;
+			current += character;
+			continue;
+		}
+		if (character === ";" || character === "|" || character === "&" || character === "\n") {
+			flush();
+			if (command[i + 1] === character || (character === "&" && command[i + 1] === "&")) i++;
+			continue;
+		}
+		current += character;
+	}
+	flush();
+	return commands;
+}
+
+function tokenizeShellWords(command: string): string[] {
+	const words: string[] = [];
+	let word = "";
+	let quote: "'" | '"' | undefined;
+	let escaped = false;
+
+	const flush = () => {
+		if (word) words.push(word);
+		word = "";
+	};
+
+	for (let i = 0; i < command.length; i++) {
+		const character = command[i];
+		if (escaped) {
+			word += character;
+			escaped = false;
+			continue;
+		}
+		if (character === "\\" && quote !== "'") {
+			escaped = true;
+			continue;
+		}
+		if (quote) {
+			if (character === quote) quote = undefined;
+			else word += character;
+			continue;
+		}
+		if (character === "'" || character === '"') {
+			quote = character;
+			continue;
+		}
+		if (/\s/.test(character)) flush();
+		else word += character;
+	}
+	flush();
+	return words;
+}
+
+/**
+ * Validates cd targets using only top-level command segments.
+ * Quoted text and command arguments are intentionally ignored.
+ */
+export const validateCdTargetSpawnHook: BashSpawnHook = ({ command, cwd, env }) => {
+	let currentCwd = cwd;
+	for (const segment of splitTopLevelShellCommands(command)) {
+		const words = tokenizeShellWords(segment);
+		if (words[0] !== "cd" || !words[1]) continue;
+		const target = words[1];
+		if (target.startsWith("$") || target.startsWith("~") || target === "-" || /[*?[]/.test(target)) continue;
+		const fullPath = path.resolve(currentCwd, target);
+		let isDirectory = false;
+		try {
+			isDirectory = fs.statSync(fullPath).isDirectory();
+		} catch {
+			isDirectory = false;
+		}
+		if (!isDirectory) throw new Error(`cd target does not exist: ${target} (resolved: ${fullPath})`);
+		currentCwd = fullPath;
+	}
+	return { command, cwd, env };
+};
+
+// Shell builtins that don't exist as separate executables
+const SHELL_BUILTINS = new Set([
+	"cd",
+	"pwd",
+	"echo",
+	"export",
+	"unset",
+	"alias",
+	"unalias",
+	"source",
+	".",
+	"exit",
+	"return",
+	"break",
+	"continue",
+	"shift",
+	"set",
+	"unset",
+	"readonly",
+	"declare",
+	"typeset",
+	"local",
+	"let",
+	"eval",
+	"exec",
+	"trap",
+	"wait",
+	"jobs",
+	"fg",
+	"bg",
+	"kill",
+	"disown",
+	"suspend",
+	"ulimit",
+	"umask",
+	"hash",
+	"type",
+	"command",
+	"builtin",
+	"enable",
+	"help",
+	"history",
+	"fc",
+	"getopts",
+	"read",
+	"printf",
+	"mapfile",
+	"readarray",
+	"true",
+	"false",
+	":",
+]);
+
+const SHELL_KEYWORDS = new Set([
+	"case",
+	"do",
+	"done",
+	"elif",
+	"else",
+	"esac",
+	"fi",
+	"for",
+	"function",
+	"if",
+	"in",
+	"then",
+	"time",
+	"until",
+	"while",
+]);
+
+function extractSimpleCommandWords(command: string): string[] {
+	const words: string[] = [];
+	for (const segment of splitTopLevelShellCommands(command)) {
+		for (const token of tokenizeShellWords(segment)) {
+			if (/^[A-Za-z_][A-Za-z0-9_]*=/.test(token) || /^\d*(?:>>?|<<|<>)/.test(token)) continue;
+			if (SHELL_KEYWORDS.has(token)) {
+				if (token === "for" || token === "case") break;
+				continue;
+			}
+			if (token === "!" || token === "{" || token === "}" || token.startsWith("$(")) continue;
+			words.push(token);
+			break;
+		}
+	}
+	return words;
+}
+
+/**
+ * Validates that external commands exist in PATH before execution.
+ * This is diagnostic-only: shell functions, aliases, and custom binaries remain valid.
+ */
+export const validateCommandExistsSpawnHook: BashSpawnHook = ({ command, cwd, env }) => {
+	const pathDirs = (env.PATH || "").split(path.delimiter);
+	for (const commandWord of extractSimpleCommandWords(command)) {
+		if (commandWord.startsWith("$") || commandWord.includes("/") || SHELL_BUILTINS.has(commandWord)) continue;
+		const exists = pathDirs.some((directory) => {
+			try {
+				const base = directory ? path.resolve(cwd, directory) : cwd;
+				return fs.existsSync(path.join(base, commandWord));
+			} catch {
+				return false;
+			}
+		});
+		if (!exists) console.warn(`⚠️ Command may not exist in PATH: ${commandWord}`);
+	}
+	return { command, cwd, env };
+};
+
+/**
+ * Warns about potentially privileged operations without blocking them.
+ * Helps catch accidental sudo/chmod/chown to system directories.
+ */
+export const warnPrivilegedOpsSpawnHook: BashSpawnHook = ({ command, cwd, env }) => {
+	const privilegedPatterns = [
+		/>\s*\/etc\//,
+		/>\s*\/usr\//,
+		/>\s*\/bin\//,
+		/>\s*\/sbin\//,
+		/>\s*\/lib\//,
+		/>\s*\/boot\//,
+		/sudo\s+/,
+		/chmod\s+/,
+		/chown\s+/,
+	];
+
+	for (const pattern of privilegedPatterns) {
+		if (pattern.test(command)) {
+			// Use console.warn so it appears in logs but doesn't block
+			console.warn(`⚠️ Potentially privileged operation: ${command.trim().slice(0, 100)}`);
+			break;
+		}
+	}
+	return { command, cwd, env };
+};
+
+/**
+ * Default timeout for bash commands (60 seconds).
+ * Can be overridden per-call via the timeout parameter.
+ */
+export const DEFAULT_BASH_TIMEOUT_MS = 60_000;
 
 export interface BashToolOptions {
 	/** Custom operations for command execution. Default: local shell */
@@ -294,11 +549,16 @@ export function createBashToolDefinition(
 ): ToolDefinition<typeof bashSchema, BashToolDetails | undefined, BashRenderState> {
 	const ops = options?.operations ?? createLocalBashOperations({ shellPath: options?.shellPath });
 	const commandPrefix = options?.commandPrefix;
-	const spawnHook = options?.spawnHook;
+	// Default spawn hooks: cd validation + command existence + privileged op warnings
+	const defaultHooks = [validateCdTargetSpawnHook, validateCommandExistsSpawnHook, warnPrivilegedOpsSpawnHook];
+	const userHook = options?.spawnHook;
+	const spawnHook = userHook
+		? (ctx: BashSpawnContext) => defaultHooks.reduce((acc, h) => h(acc), userHook(ctx))
+		: (ctx: BashSpawnContext) => defaultHooks.reduce((acc, h) => h(acc), ctx);
 	return {
 		name: "bash",
 		label: "bash",
-		description: `Execute a bash command in the current working directory. Returns stdout and stderr. Output is truncated to last ${DEFAULT_MAX_LINES} lines or ${DEFAULT_MAX_BYTES / 1024}KB (whichever is hit first). If truncated, full output is saved to a temp file. Optionally provide a timeout in seconds.`,
+		description: `Execute a bash command in the current working directory. Returns stdout and stderr. Output is truncated to last ${DEFAULT_MAX_LINES} lines or ${DEFAULT_MAX_BYTES / 1024}KB (whichever is hit first). If truncated, full output is saved to a temp file. Commands use a 60-second timeout by default; optionally provide a timeout in seconds.`,
 		promptSnippet: "Execute bash commands (ls, grep, find, etc.)",
 		parameters: bashSchema,
 		async execute(
@@ -397,10 +657,12 @@ export function createBashToolDefinition(
 			try {
 				let exitCode: number | null;
 				try {
+					// Apply default 60s timeout if none specified
+					const effectiveTimeout = timeout ?? DEFAULT_BASH_TIMEOUT_MS / 1000;
 					const result = await ops.exec(spawnContext.command, spawnContext.cwd, {
 						onData: handleData,
 						signal,
-						timeout,
+						timeout: effectiveTimeout,
 						env: spawnContext.env,
 					});
 					exitCode = result.exitCode;
