@@ -15,6 +15,8 @@ import queue
 import sys
 import time
 
+MAX_OUTPUT_CHARS = 60_000
+
 from jupyter_client import KernelManager
 
 
@@ -52,6 +54,8 @@ def main() -> int:
         timeout = float(req.get("timeout", 30))
         error = None
         parts = []
+        part_len = 0
+        truncated = False
         try:
             msg_id = kc.execute(code, allow_stdin=False)
         except Exception as e:  # noqa: BLE001
@@ -74,11 +78,28 @@ def main() -> int:
             mtype = msg["msg_type"]
             content = msg["content"]
             if mtype == "stream":
-                parts.append(content.get("text", ""))
+                text = content.get("text", "")
+                if text:
+                    room = MAX_OUTPUT_CHARS - part_len
+                    if room > 0:
+                        parts.append(text[:room])
+                        part_len += min(len(text), room)
+                        if len(text) > room:
+                            truncated = True
+                    else:
+                        truncated = True
             elif mtype in ("execute_result", "display_data"):
                 data = content.get("data", {})
                 if "text/plain" in data:
-                    parts.append(data["text/plain"])
+                    text = data["text/plain"]
+                    room = MAX_OUTPUT_CHARS - part_len
+                    if room > 0:
+                        parts.append(text[:room])
+                        part_len += min(len(text), room)
+                        if len(text) > room:
+                            truncated = True
+                    else:
+                        truncated = True
                     got_result = True
             elif mtype == "error":
                 error = "\n".join(content.get("traceback", []))
@@ -92,7 +113,10 @@ def main() -> int:
                 kc.interrupt_kernel()
             except Exception:  # noqa: BLE001
                 pass
-        reply({"seq": seq, "output": "".join(parts), "error": error})
+        output = "".join(parts)
+        if truncated:
+            output += f"\n...[output truncated at {MAX_OUTPUT_CHARS} chars]..."
+        reply({"seq": seq, "output": output, "error": error})
     return 0
 
 

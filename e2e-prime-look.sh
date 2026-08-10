@@ -42,6 +42,17 @@ console.log('theme-ok');
 " >/tmp/e2e-theme.log 2>&1
 if [ $? = 0 ]; then pass "theme imports, panel bg + purple accent"; else fail "theme (see /tmp/e2e-theme.log)"; cat /tmp/e2e-theme.log; fi
 
+say "== e2e-prime-look: light theme loads + new tokens =="
+node --input-type=module -e "
+import { loadThemeFromPath } from '$REPO/packages/coding-agent/dist/modes/interactive/theme/theme.js';
+const t = loadThemeFromPath('$REPO/packages/coding-agent/dist/modes/interactive/theme/light.json', 'ansi');
+const line = t.bg('toolPanelBg', 'x');
+if (!/48;5;255/.test(line)) throw new Error('light toolPanelBg missing: ' + JSON.stringify(line.slice(0,20)));
+t.bg('toolPendingBg', 'x'); t.bg('toolErrorBg', 'x'); t.fg('toolDiffText', 'x');
+console.log('light-ok');
+" >/tmp/e2e-light.log 2>&1
+if [ $? = 0 ]; then pass "light theme loads, all new tokens render"; else fail "light theme (see /tmp/e2e-light.log)"; cat /tmp/e2e-light.log; fi
+
 say "== e2e-prime-look: TUI render tests (offline) =="
 cat > /tmp/e2e-ui.mjs <<'EOF'
 import { setThemeInstance, loadThemeFromPath } from "/Users/arihantdeva/Repos/pi-harness/packages/coding-agent/dist/modes/interactive/theme/theme.js";
