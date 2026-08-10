@@ -76,12 +76,13 @@ import { createFindTool, createFindToolDefinition, type FindToolOptions } from "
 import { createGrepTool, createGrepToolDefinition, type GrepToolOptions } from "./grep.ts";
 import { createLsTool, createLsToolDefinition, type LsToolOptions } from "./ls.ts";
 import { createReadTool, createReadToolDefinition, type ReadToolOptions } from "./read.ts";
+import { createIPythonTool } from "./ipython.ts";
 import { createWriteTool, createWriteToolDefinition, type WriteToolOptions } from "./write.ts";
 
 export type Tool = AgentTool<any>;
 export type ToolDef = ToolDefinition<any, any>;
-export type ToolName = "read" | "bash" | "edit" | "write" | "grep" | "find" | "ls";
-export const allToolNames: Set<ToolName> = new Set(["read", "bash", "edit", "write", "grep", "find", "ls"]);
+export type ToolName = "read" | "bash" | "edit" | "write" | "grep" | "find" | "ls" | "ipython";
+export const allToolNames: Set<ToolName> = new Set(["read", "bash", "edit", "write", "grep", "find", "ls", "ipython"]);
 
 export interface ToolsOptions {
 	read?: ReadToolOptions;
@@ -109,6 +110,8 @@ export function createToolDefinition(toolName: ToolName, cwd: string, options?: 
 			return createFindToolDefinition(cwd, options?.find);
 		case "ls":
 			return createLsToolDefinition(cwd, options?.ls);
+		case "ipython":
+			return createIPythonTool(cwd);
 		default:
 			throw new Error(`Unknown tool name: ${toolName}`);
 	}
@@ -130,6 +133,8 @@ export function createTool(toolName: ToolName, cwd: string, options?: ToolsOptio
 			return createFindTool(cwd, options?.find);
 		case "ls":
 			return createLsTool(cwd, options?.ls);
+		case "ipython":
+			return createIPythonTool(cwd);
 		default:
 			throw new Error(`Unknown tool name: ${toolName}`);
 	}
@@ -162,6 +167,7 @@ export function createAllToolDefinitions(cwd: string, options?: ToolsOptions): R
 		grep: createGrepToolDefinition(cwd, options?.grep),
 		find: createFindToolDefinition(cwd, options?.find),
 		ls: createLsToolDefinition(cwd, options?.ls),
+		ipython: createIPythonTool(cwd),
 	};
 }
 
@@ -171,6 +177,7 @@ export function createCodingTools(cwd: string, options?: ToolsOptions): Tool[] {
 		createBashTool(cwd, options?.bash),
 		createEditTool(cwd, options?.edit),
 		createWriteTool(cwd, options?.write),
+		createIPythonTool(cwd),
 	];
 }
 
@@ -192,5 +199,6 @@ export function createAllTools(cwd: string, options?: ToolsOptions): Record<Tool
 		grep: createGrepTool(cwd, options?.grep),
 		find: createFindTool(cwd, options?.find),
 		ls: createLsTool(cwd, options?.ls),
+		ipython: createIPythonTool(cwd),
 	};
 }
