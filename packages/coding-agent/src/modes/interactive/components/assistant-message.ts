@@ -1,10 +1,86 @@
 import type { AssistantMessage } from "@earendil-works/pi-ai";
-import { Container, Markdown, type MarkdownTheme, Spacer, Text } from "@earendil-works/pi-tui";
+import {
+	type Component,
+	Container,
+	Markdown,
+	type MarkdownTheme,
+	Spacer,
+	Text,
+	truncateToWidth,
+	visibleWidth,
+} from "@earendil-works/pi-tui";
 import { getMarkdownTheme, theme } from "../theme/theme.ts";
+import { keyText } from "./keybinding-hints.ts";
 
 const OSC133_ZONE_START = "\x1b]133;A\x07";
 const OSC133_ZONE_END = "\x1b]133;B\x07";
 const OSC133_ZONE_FINAL = "\x1b]133;C\x07";
+
+/** Thinking traces render quiet: same structure, muted color, no italics. */
+function getThinkingMarkdownTheme(baseTheme: MarkdownTheme): MarkdownTheme {
+	const quiet = (text: string) => theme.fg("thinkingText", text);
+	return {
+		...baseTheme,
+		heading: quiet,
+		link: quiet,
+		linkUrl: quiet,
+		code: quiet,
+		codeBlock: quiet,
+		codeBlockBorder: quiet,
+		quote: quiet,
+		quoteBorder: quiet,
+		hr: quiet,
+		listBullet: quiet,
+		highlightCode: (code: string) => code.split("\n").map((line) => quiet(line)),
+	};
+}
+
+/** Single collapsed-thinking row that truncates the recap to the render width instead of wrapping. */
+class CollapsedThinkingRow implements Component {
+	private readonly label: string;
+	private readonly recap: string;
+	private readonly hint: string;
+
+	constructor(label: string, recap: string, hint: string) {
+		this.label = label;
+		this.recap = recap;
+		this.hint = hint;
+	}
+
+	render(width: number): string[] {
+		const safeWidth = Math.max(1, width);
+		const separator = theme.fg("dim", " · ");
+		const fixedWidth = visibleWidth(` ${this.label}${separator} ${this.hint}`);
+		const recapWidth = Math.max(8, safeWidth - fixedWidth);
+		const recap = theme.fg("thinkingText", truncateToWidth(this.recap, recapWidth));
+		return [truncateToWidth(` ${this.label}${separator}${recap} ${this.hint}`, safeWidth, "")];
+	}
+
+	invalidate(): void {}
+}
+
+/**
+ * One-line recap for a collapsed thinking block: the last bold section header
+ * when the trace has one (reasoning summaries usually do), otherwise the first
+ * non-empty line, stripped of markdown emphasis and truncated.
+ */
+export function thinkingRecap(thinking: string, fallback: string, maxWidth = 120): string {
+	const lines = thinking
+		.split("\n")
+		.map((line) => line.trim())
+		.filter((line) => line.length > 0);
+	const lastHeader = [...lines].reverse().find((line) => /^\*\*[^*]+\*\*:?$/.test(line) || /^#{1,6}\s+\S/.test(line));
+	const source = lastHeader ?? lines[0] ?? fallback;
+	const plain = source
+		.replace(/^#{1,6}\s+/, "")
+		.replace(/\*\*([^*]+)\*\*/g, "$1")
+		.replace(/\*([^*]+)\*/g, "$1")
+		.replace(/`([^`]+)`/g, "$1")
+		.replace(/\s+/g, " ")
+		.replace(/:$/, "")
+		.trim();
+	return truncateToWidth(plain || fallback, Math.max(20, maxWidth));
+}
 
 /**
  * Component that renders a complete assistant message
@@ -43,30 +119,23 @@ export class AssistantMessageComponent extends Container {
 
 	override invalidate(): void {
 		super.invalidate();
-		if (this.lastMessage) {
-			this.updateContent(this.lastMessage);
-		}
+		// Force a full rebuild so theme-dependent children are recreated.
+		this.updateContent(this.lastMessage!);
 	}
 
 	setHideThinkingBlock(hide: boolean): void {
 		this.hideThinkingBlock = hide;
-		if (this.lastMessage) {
-			this.updateContent(this.lastMessage);
-		}
+		this.updateContent(this.lastMessage!);
 	}
 
 	setHiddenThinkingLabel(label: string): void {
 		this.hiddenThinkingLabel = label;
-		if (this.lastMessage) {
-			this.updateContent(this.lastMessage);
-		}
+		this.updateContent(this.lastMessage!);
 	}
 
 	setOutputPad(padding: number): void {
 		this.outputPad = padding;
-		if (this.lastMessage) {
-			this.updateContent(this.lastMessage);
-		}
+		this.updateContent(this.lastMessage!);
 	}
 
 	override render(width: number): string[] {
@@ -108,21 +177,37 @@ export class AssistantMessageComponent extends Container {
 					.slice(i + 1)
 					.some((c) => (c.type === "text" && c.text.trim()) || (c.type === "thinking" && c.thinking.trim()));
 
+				const thinkingLabel = theme.bold(theme.fg("thinkingText", this.hiddenThinkingLabel));
 				if (this.hideThinkingBlock) {
-					// Show static thinking label when hidden
+					// Collapsed row: bold label, a one-line recap of the trace, and the
+					// toggle hint. The row truncates the recap to the render width so it
+					// never wraps onto a second line on narrow terminals.
 					this.contentContainer.addChild(
-						new Text(theme.italic(theme.fg("thinkingText", this.hiddenThinkingLabel)), this.outputPad, 0),
+						new CollapsedThinkingRow(
+							thinkingLabel,
+							thinkingRecap(content.thinking, this.hiddenThinkingLabel),
+							thinkingToggleHint("to expand"),
+						),
 					);
 					if (hasVisibleContentAfter) {
 						this.contentContainer.addChild(new Spacer(1));
 					}
 				} else {
-					// Thinking traces in thinkingText color, italic
+					// Expanded: the same label line with the toggle hint, then the trace.
+					// Thinking traces keep Markdown structure but stay visually quiet.
 					this.contentContainer.addChild(
-						new Markdown(content.thinking.trim(), this.outputPad, 0, this.markdownTheme, {
-							color: (text: string) => theme.fg("thinkingText", text),
-							italic: true,
-						}),
+						new Text(`${thinkingLabel} ${thinkingToggleHint("to collapse")}`, this.outputPad, 0),
+					);
+					this.contentContainer.addChild(
+						new Markdown(
+							content.thinking.trim(),
+							this.outputPad,
+							0,
+							getThinkingMarkdownTheme(this.markdownTheme),
+							{
+								color: (text: string) => theme.fg("thinkingText", text),
+							},
+						),
 					);
 					if (hasVisibleContentAfter) {
 						this.contentContainer.addChild(new Spacer(1));
@@ -163,4 +248,8 @@ export class AssistantMessageComponent extends Container {
 			}
 		}
 	}
+}
+
+function thinkingToggleHint(description: string): string {
+	return `(${keyText("app.thinking.toggle")} ${description})`;
 }

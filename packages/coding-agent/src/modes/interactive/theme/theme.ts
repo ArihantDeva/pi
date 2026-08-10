@@ -55,6 +55,9 @@ const ThemeJsonSchema = Type.Object({
 		toolPendingBg: ColorValueSchema,
 		toolSuccessBg: ColorValueSchema,
 		toolErrorBg: ColorValueSchema,
+		toolDiffAddedBg: ColorValueSchema,
+		toolDiffRemovedBg: ColorValueSchema,
+		toolPanelBg: ColorValueSchema,
 		toolTitle: ColorValueSchema,
 		toolOutput: ColorValueSchema,
 		// Markdown (10 colors)
@@ -136,6 +139,10 @@ export type ThemeColor =
 	| "toolDiffAdded"
 	| "toolDiffRemoved"
 	| "toolDiffContext"
+	| "toolDiffAddedBg"
+	| "toolDiffRemovedBg"
+	| "toolPanelBg"
+	| "toolDiffText"
 	| "syntaxComment"
 	| "syntaxKeyword"
 	| "syntaxFunction"
