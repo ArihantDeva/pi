@@ -35,7 +35,7 @@ import { loadThemeFromPath } from '$REPO/packages/coding-agent/dist/modes/intera
 const t = loadThemeFromPath('$REPO/packages/coding-agent/dist/modes/interactive/theme/dark.json', 'truecolor');
 const c = t.resolve ? t.resolve() : null;
 const sample = t.bg('toolPanelBg', 'x');
-if (!sample.includes('13;13;16') && !sample.includes('0d0d10') && !/\x1b\[48;2;(13;13;16|29;29;34)/.test(sample)) throw new Error('toolPanelBg not surface');
+if (!sample.includes('48;2;0;0;0') && !sample.includes('000000')) throw new Error('toolPanelBg not pure black: ' + JSON.stringify(sample.slice(0,30)));
 const accent = t.fg('accent', 'x');
 if (!/124;111;175/.test(accent) && !/7c6faf/.test(accent)) throw new Error('accent not prime purple: ' + accent.slice(0,40));
 console.log('theme-ok');
@@ -47,7 +47,7 @@ node --input-type=module -e "
 import { loadThemeFromPath } from '$REPO/packages/coding-agent/dist/modes/interactive/theme/theme.js';
 const t = loadThemeFromPath('$REPO/packages/coding-agent/dist/modes/interactive/theme/light.json', 'ansi');
 const line = t.bg('toolPanelBg', 'x');
-if (!/48;5;255/.test(line)) throw new Error('light toolPanelBg missing: ' + JSON.stringify(line.slice(0,20)));
+if (!/48;5;231/.test(line) && !/48;2;255;255;255/.test(line)) throw new Error('light toolPanelBg not white: ' + JSON.stringify(line.slice(0,20)));
 t.bg('toolPendingBg', 'x'); t.bg('toolErrorBg', 'x'); t.fg('toolDiffText', 'x');
 console.log('light-ok');
 " >/tmp/e2e-light.log 2>&1
@@ -114,7 +114,7 @@ const ui = { requestRender() {} };
   const done = strip(tec.render(80).join("\n"));
   out.push(["done ✓ glyph", done.includes("✓")]);
   const bgSample = tec.render(80).join("\n");
-  out.push(["panel bg applied", bgSample.includes("48;2;13;13;16") || bgSample.includes("48;2;29;29;34")]);
+  out.push(["panel bg applied", bgSample.includes("48;2;0;0;0") || bgSample.includes("48;2;0;0;0")]);
 }
 
 for (const [name, ok] of out) console.log((ok ? "PASS" : "FAIL") + " " + name);
