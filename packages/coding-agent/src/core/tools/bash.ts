@@ -2,7 +2,7 @@ import fs, { constants } from "node:fs";
 import { access as fsAccess } from "node:fs/promises";
 import path from "node:path";
 import type { AgentTool } from "@earendil-works/pi-agent-core";
-import { Container, Text, truncateToWidth } from "@earendil-works/pi-tui";
+import { Container, Text, truncateToWidth, type Component } from "@earendil-works/pi-tui";
 import { spawn } from "child_process";
 import { type Static, Type } from "typebox";
 import { keyHint } from "../../modes/interactive/components/keybinding-hints.ts";
@@ -468,6 +468,9 @@ type BashResultRenderState = {
 	cachedSkipped: number | undefined;
 };
 
+
+/** Collapsed render: the compact panel header already shows the command; render nothing below it. */
+const COLLAPSED_EMPTY: Component = { render: () => [], invalidate: () => {} };
 class BashResultRenderComponent extends Container {
 	state: BashResultRenderState = {
 		cachedWidth: undefined,
@@ -717,6 +720,10 @@ export function createBashToolDefinition(
 			}
 		},
 		renderCall(args, _theme, context) {
+			if (!context.expanded) {
+				// Collapsed: the compact panel header shows the command; no `$` echo line.
+				return COLLAPSED_EMPTY;
+			}
 			const state = context.state;
 			if (context.executionStarted && state.startedAt === undefined) {
 				state.startedAt = Date.now();
@@ -727,6 +734,10 @@ export function createBashToolDefinition(
 			return text;
 		},
 		renderResult(result, options, _theme, context) {
+			if (!options.expanded) {
+				// Collapsed: header ✓/✗ pulse is the whole story; output on ctrl+o expand.
+				return COLLAPSED_EMPTY;
+			}
 			const state = context.state;
 			if (state.startedAt !== undefined && options.isPartial && !state.interval) {
 				state.interval = setInterval(() => context.invalidate(), 1000);
