@@ -167,7 +167,10 @@ export type ThemeBg =
 	| "customMessageBg"
 	| "toolPendingBg"
 	| "toolSuccessBg"
-	| "toolErrorBg";
+	| "toolErrorBg"
+	| "toolDiffAddedBg"
+	| "toolDiffRemovedBg"
+	| "toolPanelBg";
 
 type ColorMode = "truecolor" | "256color";
 

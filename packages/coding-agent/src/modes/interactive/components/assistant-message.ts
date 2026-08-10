@@ -35,6 +35,10 @@ function getThinkingMarkdownTheme(baseTheme: MarkdownTheme): MarkdownTheme {
 	};
 }
 
+function thinkingToggleHint(description: string): string {
+	return `(${keyText("app.thinking.toggle")} ${description})`;
+}
+
 /** Single collapsed-thinking row that truncates the recap to the render width instead of wrapping. */
 class CollapsedThinkingRow implements Component {
 	private readonly label: string;
@@ -83,7 +87,11 @@ export function thinkingRecap(thinking: string, fallback: string, maxWidth = 120
 }
 
 /**
- * Component that renders a complete assistant message
+ * Component that renders a complete assistant message.
+ *
+ * Streaming is incremental: while the content structure is stable, updates
+ * reduce to setText() on the changed block(s). Any structural change (a new
+ * block, the collapsed-thinking recap, hide/expand toggle) triggers a rebuild.
  */
 export class AssistantMessageComponent extends Container {
 	private contentContainer: Container;
@@ -93,6 +101,10 @@ export class AssistantMessageComponent extends Container {
 	private outputPad: number;
 	private lastMessage?: AssistantMessage;
 	private hasToolCalls = false;
+	private dirty = false;
+	private lastSignature?: string;
+	private blockMarkdowns = new Map<number, Markdown>();
+	private lastBlockTexts = new Map<number, string>();
 
 	constructor(
 		message?: AssistantMessage,
@@ -120,25 +132,30 @@ export class AssistantMessageComponent extends Container {
 	override invalidate(): void {
 		super.invalidate();
 		// Force a full rebuild so theme-dependent children are recreated.
-		this.updateContent(this.lastMessage!);
+		this.lastSignature = undefined;
+		this.dirty = true;
 	}
 
 	setHideThinkingBlock(hide: boolean): void {
 		this.hideThinkingBlock = hide;
-		this.updateContent(this.lastMessage!);
+		this.dirty = true;
 	}
 
 	setHiddenThinkingLabel(label: string): void {
 		this.hiddenThinkingLabel = label;
-		this.updateContent(this.lastMessage!);
+		this.dirty = true;
 	}
 
 	setOutputPad(padding: number): void {
 		this.outputPad = padding;
-		this.updateContent(this.lastMessage!);
+		this.dirty = true;
 	}
 
 	override render(width: number): string[] {
+		if (this.dirty && this.lastMessage) {
+			this.reconcile(this.lastMessage);
+			this.dirty = false;
+		}
 		const lines = super.render(width);
 		if (this.hasToolCalls || lines.length === 0) {
 			return lines;
@@ -151,9 +168,74 @@ export class AssistantMessageComponent extends Container {
 
 	updateContent(message: AssistantMessage): void {
 		this.lastMessage = message;
+		this.dirty = true;
+	}
 
+	/**
+	 * Everything that affects child component identity/order, but not the text
+	 * inside a block. While the signature is stable, updates reduce to setText()
+	 * on changed blocks; any structural change triggers a full rebuild.
+	 */
+	private computeSignature(message: AssistantMessage): string {
+		const parts: string[] = [];
+		for (let i = 0; i < message.content.length; i++) {
+			const content = message.content[i];
+			if (content.type === "text") {
+				parts.push(`${i}:text:${content.text.trim() ? 1 : 0}`);
+			} else if (content.type === "thinking") {
+				parts.push(`${i}:thinking:${content.thinking.trim() ? 1 : 0}`);
+				if (this.hideThinkingBlock && content.thinking.trim()) {
+					// The collapsed row bakes the recap into a static line, so a recap
+					// change must count as a structural change during streaming.
+					// JSON-encode the free text so it cannot forge part boundaries.
+					parts.push(`${i}:recap:${JSON.stringify(thinkingRecap(content.thinking, this.hiddenThinkingLabel))}`);
+				}
+			} else {
+				parts.push(`${i}:${content.type}`);
+			}
+		}
+		parts.push(
+			`hide:${this.hideThinkingBlock}`,
+			`label:${this.hiddenThinkingLabel}`,
+			`pad:${this.outputPad}`,
+			`stop:${message.stopReason ?? ""}`,
+			`error:${message.errorMessage ?? ""}`,
+		);
+		return parts.join("|");
+	}
+
+	private reconcile(message: AssistantMessage): void {
+		const signature = this.computeSignature(message);
+		if (signature !== this.lastSignature) {
+			this.lastSignature = signature;
+			this.rebuild(message);
+			return;
+		}
+
+		// Structure unchanged: update only blocks whose text changed (during
+		// streaming that is just the final block).
+		for (let i = 0; i < message.content.length; i++) {
+			const content = message.content[i];
+			const markdown = this.blockMarkdowns.get(i);
+			if (!markdown) continue;
+			let text: string | undefined;
+			if (content.type === "text") {
+				text = content.text.trim();
+			} else if (content.type === "thinking") {
+				text = content.thinking.trim();
+			}
+			if (text !== undefined && text !== this.lastBlockTexts.get(i)) {
+				this.lastBlockTexts.set(i, text);
+				markdown.setText(text);
+			}
+		}
+	}
+
+	private rebuild(message: AssistantMessage): void {
 		// Clear content container
 		this.contentContainer.clear();
+		this.blockMarkdowns.clear();
+		this.lastBlockTexts.clear();
 
 		const hasVisibleContent = message.content.some(
 			(c) => (c.type === "text" && c.text.trim()) || (c.type === "thinking" && c.thinking.trim()),
@@ -167,12 +249,12 @@ export class AssistantMessageComponent extends Container {
 		for (let i = 0; i < message.content.length; i++) {
 			const content = message.content[i];
 			if (content.type === "text" && content.text.trim()) {
-				// Assistant text messages with no background - trim the text
-				// Set paddingY=0 to avoid extra spacing before tool executions
-				this.contentContainer.addChild(new Markdown(content.text.trim(), this.outputPad, 0, this.markdownTheme));
+				const markdown = new Markdown(content.text.trim(), this.outputPad, 0, this.markdownTheme);
+				this.blockMarkdowns.set(i, markdown);
+				this.lastBlockTexts.set(i, content.text.trim());
+				this.contentContainer.addChild(markdown);
 			} else if (content.type === "thinking" && content.thinking.trim()) {
 				// Add spacing only when another visible assistant content block follows.
-				// This avoids a superfluous blank line before separately-rendered tool execution blocks.
 				const hasVisibleContentAfter = message.content
 					.slice(i + 1)
 					.some((c) => (c.type === "text" && c.text.trim()) || (c.type === "thinking" && c.thinking.trim()));
@@ -198,17 +280,18 @@ export class AssistantMessageComponent extends Container {
 					this.contentContainer.addChild(
 						new Text(`${thinkingLabel} ${thinkingToggleHint("to collapse")}`, this.outputPad, 0),
 					);
-					this.contentContainer.addChild(
-						new Markdown(
-							content.thinking.trim(),
-							this.outputPad,
-							0,
-							getThinkingMarkdownTheme(this.markdownTheme),
-							{
-								color: (text: string) => theme.fg("thinkingText", text),
-							},
-						),
+					const markdown = new Markdown(
+						content.thinking.trim(),
+						this.outputPad,
+						0,
+						getThinkingMarkdownTheme(this.markdownTheme),
+						{
+							color: (text: string) => theme.fg("thinkingText", text),
+						},
 					);
+					this.blockMarkdowns.set(i, markdown);
+					this.lastBlockTexts.set(i, content.thinking.trim());
+					this.contentContainer.addChild(markdown);
 					if (hasVisibleContentAfter) {
 						this.contentContainer.addChild(new Spacer(1));
 					}
@@ -217,7 +300,6 @@ export class AssistantMessageComponent extends Container {
 		}
 
 		// Check if incomplete/failed - show after partial content.
-		// For aborted/error tool calls, tool execution components show the error.
 		// Length stops can happen before a tool call is complete, so surface them here too.
 		const hasToolCalls = message.content.some((c) => c.type === "toolCall");
 		this.hasToolCalls = hasToolCalls;
@@ -248,8 +330,4 @@ export class AssistantMessageComponent extends Container {
 			}
 		}
 	}
-}
-
-function thinkingToggleHint(description: string): string {
-	return `(${keyText("app.thinking.toggle")} ${description})`;
 }
