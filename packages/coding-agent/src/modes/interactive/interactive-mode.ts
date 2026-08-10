@@ -103,6 +103,7 @@ import { getPiUserAgent } from "../../utils/pi-user-agent.ts";
 import { killTrackedDetachedChildren } from "../../utils/shell.ts";
 import { ensureTool } from "../../utils/tools-manager.ts";
 import { checkForNewPiVersion, type LatestPiRelease } from "../../utils/version-check.ts";
+import { AGENT_ACTIVITY_LABELS, AgentActivityTracker, formatTokenCount } from "./agent-activity.ts";
 import { ArminComponent } from "./components/armin.ts";
 import { AssistantMessageComponent } from "./components/assistant-message.ts";
 import { BashExecutionComponent } from "./components/bash-execution.ts";
@@ -367,6 +368,10 @@ export class InteractiveMode {
 	private workingVisible = true;
 	private workingIndicatorOptions: WorkingIndicatorOptions | undefined = undefined;
 	private readonly defaultWorkingMessage = "Working...";
+	private readonly activityTracker = new AgentActivityTracker();
+	private workingStartedAt: number | undefined;
+	private workingTimer: ReturnType<typeof setInterval> | undefined;
+
 	private readonly defaultHiddenThinkingLabel = "Thinking...";
 	private hiddenThinkingLabel = this.defaultHiddenThinkingLabel;
 
@@ -1831,6 +1836,9 @@ export class InteractiveMode {
 	}
 
 	private showStatusIndicator(indicator: StatusIndicator): void {
+		if (this.activeStatusIndicator?.kind === "working") {
+			this.stopWorkingTimer();
+		}
 		this.activeStatusIndicator?.dispose();
 		this.activeStatusIndicator = indicator;
 		this.statusContainer.clear();
@@ -1844,6 +1852,7 @@ export class InteractiveMode {
 		const hadActiveStatusIndicator = this.activeStatusIndicator !== undefined;
 		this.activeStatusIndicator?.dispose();
 		this.activeStatusIndicator = undefined;
+		this.stopWorkingTimer();
 		this.statusContainer.clear();
 		if (hadActiveStatusIndicator && this.ui.getClearOnShrink()) {
 			this.statusContainer.addChild(this.idleStatus);
@@ -1859,12 +1868,9 @@ export class InteractiveMode {
 		}
 		if (this.session.isStreaming && this.activeStatusIndicator?.kind !== "working") {
 			this.showStatusIndicator(
-				new WorkingStatusIndicator(
-					this.ui,
-					this.workingMessage ?? this.defaultWorkingMessage,
-					this.workingIndicatorOptions,
-				),
+				new WorkingStatusIndicator(this.ui, this.getWorkingLoaderMessage(), this.workingIndicatorOptions),
 			);
+			this.startWorkingTimer();
 		}
 		this.ui.requestRender();
 	}
@@ -1875,6 +1881,62 @@ export class InteractiveMode {
 			this.activeStatusIndicator.setIndicator(options);
 		}
 		this.ui.requestRender();
+	}
+
+	private getWorkingLoaderMessage(): string {
+		const elapsed =
+			this.workingStartedAt === undefined
+				? undefined
+				: this.formatWorkingElapsed(Date.now() - this.workingStartedAt);
+		if (this.workingMessage !== undefined) {
+			// Extensions and tool bootstrap own the message; keep the plain "<message> <elapsed>" form.
+			return elapsed === undefined ? this.workingMessage : `${this.workingMessage} ${elapsed}`;
+		}
+		const status = this.activityTracker.getStatus();
+		const parts: string[] = [AGENT_ACTIVITY_LABELS[status.activity]];
+		if (elapsed !== undefined) {
+			parts.push(elapsed);
+		}
+		if (status.tokens > 0) {
+			parts.push(`${status.direction === "down" ? "↓" : "↑"} ${formatTokenCount(status.tokens)} tokens`);
+		}
+		return parts.join(" · ");
+	}
+
+	private formatWorkingElapsed(elapsedMs: number): string {
+		const totalSeconds = Math.max(0, Math.floor(elapsedMs / 1000));
+		if (totalSeconds < 60) {
+			return `${totalSeconds}s`;
+		}
+		const minutes = Math.floor(totalSeconds / 60);
+		const seconds = totalSeconds % 60;
+		if (minutes < 60) {
+			return `${minutes}m ${seconds.toString().padStart(2, "0")}s`;
+		}
+		const hours = Math.floor(minutes / 60);
+		const remainingMinutes = minutes % 60;
+		return `${hours}h ${remainingMinutes.toString().padStart(2, "0")}m ${seconds.toString().padStart(2, "0")}s`;
+	}
+
+	private startWorkingTimer(): void {
+		this.stopWorkingTimer();
+		this.workingStartedAt = Date.now();
+		this.workingTimer = setInterval(() => this.updateWorkingLoaderMessage(), 1000);
+		this.workingTimer.unref?.();
+	}
+
+	private stopWorkingTimer(): void {
+		if (this.workingTimer) {
+			clearInterval(this.workingTimer);
+			this.workingTimer = undefined;
+		}
+		this.workingStartedAt = undefined;
+	}
+
+	private updateWorkingLoaderMessage(): void {
+		if (this.activeStatusIndicator?.kind === "working") {
+			this.activeStatusIndicator.setMessage(this.getWorkingLoaderMessage());
+		}
 	}
 
 	private setHiddenThinkingLabel(label?: string): void {
@@ -2829,6 +2891,7 @@ export class InteractiveMode {
 		}
 
 		this.footer.invalidate();
+		this.activityTracker.handleEvent(event);
 
 		switch (event.type) {
 			case "agent_start":
@@ -2844,20 +2907,12 @@ export class InteractiveMode {
 				}
 				if (this.workingVisible) {
 					this.showStatusIndicator(
-						new WorkingStatusIndicator(
-							this.ui,
-							this.workingMessage ?? this.defaultWorkingMessage,
-							this.workingIndicatorOptions,
-						),
+						new WorkingStatusIndicator(this.ui, this.getWorkingLoaderMessage(), this.workingIndicatorOptions),
 					);
+					this.startWorkingTimer();
 				} else {
 					this.clearStatusIndicator();
 				}
-				this.ui.requestRender();
-				break;
-
-			case "queue_update":
-				this.updatePendingMessagesDisplay();
 				this.ui.requestRender();
 				break;
 
