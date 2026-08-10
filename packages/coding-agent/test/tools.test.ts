@@ -565,6 +565,44 @@ describe("Coding Agent Tools", () => {
 			}
 		});
 
+		it("should ignore heredoc bodies when validating commands", () => {
+			const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+			try {
+				validateCommandExistsSpawnHook({
+					command: [
+						"python3 - <<'PY'",
+						"import json",
+						"def main():",
+						"    print('hi')",
+						"json.dump({}, open('p','w'))",
+						"os.chmod('p', 0o600)",
+						"PY",
+						"echo ok",
+					].join("\n"),
+					cwd: testDir,
+					env: { PATH: process.env.PATH },
+				});
+				expect(warn).not.toHaveBeenCalled();
+			} finally {
+				warn.mockRestore();
+			}
+		});
+
+		it("should still warn for a missing command after a heredoc", () => {
+			const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+			try {
+				validateCommandExistsSpawnHook({
+					command: ["cat <<'EOF'", "some body text", "EOF", "definitely-missing-command-xyz"].join("\n"),
+					cwd: testDir,
+					env: { PATH: process.env.PATH },
+				});
+				expect(warn).toHaveBeenCalledTimes(1);
+				expect(warn.mock.calls[0]?.[0]).toContain("definitely-missing-command-xyz");
+			} finally {
+				warn.mockRestore();
+			}
+		});
+
 		it("should use the default timeout when one is omitted", async () => {
 			let receivedTimeout: number | undefined;
 			const bash = createBashTool(testDir, {

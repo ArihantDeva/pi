@@ -166,14 +166,33 @@ function splitTopLevelShellCommands(command: string): string[] {
 	let current = "";
 	let quote: "'" | '"' | undefined;
 	let comment = false;
+	let heredocDelimiter: string | undefined;
 
 	const flush = () => {
 		if (current.trim()) commands.push(current.trim());
 		current = "";
 	};
 
+	// Heredoc opener at end of line, e.g. `cat <<'EOF'`, `<<-PY`, `<<MARKER`.
+	// Body lines must not be parsed as separate commands.
+	const heredocDelimiterOf = (line: string): string | undefined => {
+		const match = /(?:^|[\s;|&])<<-?\s*(?:'([A-Za-z_][A-Za-z0-9_]*)'|"([A-Za-z_][A-Za-z0-9_]*)"|([A-Za-z_][A-Za-z0-9_]*))\s*$/.exec(line);
+		return match ? (match[1] ?? match[2] ?? match[3]) : undefined;
+	};
+
 	for (let i = 0; i < command.length; i++) {
 		const character = command[i];
+		if (heredocDelimiter) {
+			if (character === "\n") {
+				if (current.slice(current.lastIndexOf("\n") + 1).trim() === heredocDelimiter) {
+					heredocDelimiter = undefined;
+					flush();
+					continue;
+				}
+			}
+			current += character;
+			continue;
+		}
 		if (comment) {
 			if (character === "\n") {
 				comment = false;
@@ -201,6 +220,14 @@ function splitTopLevelShellCommands(command: string): string[] {
 			continue;
 		}
 		if (character === ";" || character === "|" || character === "&" || character === "\n") {
+			if (character === "\n") {
+				const delimiter = heredocDelimiterOf(current);
+				if (delimiter) {
+					heredocDelimiter = delimiter;
+					current += character;
+					continue;
+				}
+			}
 			flush();
 			if (command[i + 1] === character || (character === "&" && command[i + 1] === "&")) i++;
 			continue;

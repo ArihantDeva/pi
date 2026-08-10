@@ -855,9 +855,15 @@ export async function main(args: string[], options?: MainOptions) {
 		});
 		stopThemeWatcher();
 		restoreStdout();
-		if (exitCode !== 0) {
-			process.exitCode = exitCode;
+		// Print mode's contract is "process prompt and exit". Extensions may
+		// leave timers/servers that keep the event loop alive; force exit so
+		// one-shot invocations from scripts never hang.
+		if (process.stdout.writableLength > 0) {
+			await new Promise<void>((resolve) => process.stdout.once("drain", resolve));
 		}
-		return;
+		if (process.stderr.writableLength > 0) {
+			await new Promise<void>((resolve) => process.stderr.once("drain", resolve));
+		}
+		process.exit(exitCode);
 	}
 }

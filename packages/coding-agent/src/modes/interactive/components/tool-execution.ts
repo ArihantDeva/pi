@@ -169,7 +169,9 @@ export class ToolExecutionComponent extends Container {
 		},
 		isPartial = false,
 	): void {
-		this.result = result;
+		// Some event producers pass results without a `content` array; normalize so
+		// downstream renderers never crash on `.filter`.
+		this.result = { ...result, content: result.content ?? [] };
 		this.isPartial = isPartial;
 		this.updateDisplay();
 		this.maybeConvertImagesForKitty();
