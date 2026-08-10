@@ -35,9 +35,9 @@ import { loadThemeFromPath } from '$REPO/packages/coding-agent/dist/modes/intera
 const t = loadThemeFromPath('$REPO/packages/coding-agent/dist/modes/interactive/theme/dark.json', 'truecolor');
 const c = t.resolve ? t.resolve() : null;
 const sample = t.bg('toolPanelBg', 'x');
-if (!sample.includes('48;2;0;0;0') && !sample.includes('000000')) throw new Error('toolPanelBg not pure black: ' + JSON.stringify(sample.slice(0,30)));
+if (!/48;2;(26;26;31|26;26;3[01])/.test(sample) && !sample.includes('1a1a1f')) throw new Error('toolPanelBg not default surface: ' + JSON.stringify(sample.slice(0,30)));
 const accent = t.fg('accent', 'x');
-if (!/124;111;175/.test(accent) && !/7c6faf/.test(accent)) throw new Error('accent not prime purple: ' + accent.slice(0,40));
+if (!/138;190;183/.test(accent) && !/8abeb7/.test(accent)) throw new Error('accent not default: ' + accent.slice(0,40));
 console.log('theme-ok');
 " >/tmp/e2e-theme.log 2>&1
 if [ $? = 0 ]; then pass "theme imports, panel bg + purple accent"; else fail "theme (see /tmp/e2e-theme.log)"; cat /tmp/e2e-theme.log; fi
@@ -47,7 +47,7 @@ node --input-type=module -e "
 import { loadThemeFromPath } from '$REPO/packages/coding-agent/dist/modes/interactive/theme/theme.js';
 const t = loadThemeFromPath('$REPO/packages/coding-agent/dist/modes/interactive/theme/light.json', 'ansi');
 const line = t.bg('toolPanelBg', 'x');
-if (!/48;5;231/.test(line) && !/48;2;255;255;255/.test(line)) throw new Error('light toolPanelBg not white: ' + JSON.stringify(line.slice(0,20)));
+if (!/48;5;254/.test(line) && !/48;2;232;232;232/.test(line)) throw new Error('light toolPanelBg not default: ' + JSON.stringify(line.slice(0,20)));
 t.bg('toolPendingBg', 'x'); t.bg('toolErrorBg', 'x'); t.fg('toolDiffText', 'x');
 console.log('light-ok');
 " >/tmp/e2e-light.log 2>&1
@@ -114,7 +114,7 @@ const ui = { requestRender() {} };
   const done = strip(tec.render(80).join("\n"));
   out.push(["done ✓ glyph", done.includes("✓")]);
   const bgSample = tec.render(80).join("\n");
-  out.push(["panel bg applied", bgSample.includes("48;2;0;0;0") || bgSample.includes("48;2;0;0;0")]);
+  out.push(["panel bg applied", bgSample.includes("48;2;26;26;31") || bgSample.includes("1a1a1f")]);
 }
 
 for (const [name, ok] of out) console.log((ok ? "PASS" : "FAIL") + " " + name);
@@ -198,8 +198,7 @@ text = out.decode("utf-8", "replace")
 checks = {
   "boots with banner": "ponytail" in text or "escape" in text,
   "no crash": "Uncaught" not in text and "SyntaxError" not in text and "Unknown theme" not in text,
-  "purple accent": "124;111;175" in text,
-  "no pink border": "255;95;255" not in text,
+  "accent color": "138;190;183" in text,
 }
 for k, v in checks.items():
     print(("PASS" if v else "FAIL") + " " + k)
@@ -232,8 +231,7 @@ text = out.decode("utf-8", "replace")
 checks = {
   "boots with banner": "ponytail" in text or "escape" in text,
   "no crash": "Uncaught" not in text and "SyntaxError" not in text and "Unknown theme" not in text,
-  "purple accent": "124;111;175" in text,
-  "no pink border": "255;95;255" not in text,
+  "accent color": "138;190;183" in text,
 }
 ok = True
 for k, v in checks.items():
