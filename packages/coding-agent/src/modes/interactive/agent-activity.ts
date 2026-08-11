@@ -13,10 +13,8 @@ export interface AgentActivityStatus {
 	activity: AgentActivity;
 	/** "down" while receiving model output, "up" while sending (request in flight or tool executing). */
 	direction: "down" | "up";
-	/** Input tokens for the current turn (authoritative usage when reported, else a char/4 estimate). */
-	inputTokens: number;
-	/** Output tokens accumulated since the user's last message. */
-	outputTokens: number;
+	/** Output tokens accumulated since the user's last message (usage-reported when available, else char/4 estimate). */
+	tokens: number;
 }
 
 export const AGENT_ACTIVITY_LABELS: Record<AgentActivity, string> = {
@@ -35,7 +33,6 @@ export class AgentActivityTracker {
 	private completedTokens = 0;
 	private streamingUsageTokens = 0;
 	private streamingChars = 0;
-	private inputTokens = 0;
 	private runningToolCount = 0;
 	// Providers like Anthropic only report usage at the start and end of a message, so the
 	// live count leans on the character estimate in between. Keeping the reported value
@@ -52,10 +49,6 @@ export class AgentActivityTracker {
 			case "message_start":
 				if (event.message.role === "user") {
 					this.reset();
-					const content = event.message.content;
-					const text =
-						typeof content === "string" ? content : content.map((c) => ("text" in c ? c.text : "")).join("");
-					this.inputTokens = Math.max(Math.round(text.length / CHARS_PER_TOKEN_ESTIMATE), 1);
 				} else if (event.message.role === "assistant") {
 					this.activity = "working";
 					this.streamingUsageTokens = 0;
@@ -123,8 +116,7 @@ export class AgentActivityTracker {
 		return {
 			activity: this.activity,
 			direction: this.activity === "working" || this.activity === "executing" ? "up" : "down",
-			inputTokens: this.inputTokens,
-			outputTokens: this.reportedTokens,
+			tokens: this.reportedTokens,
 		};
 	}
 

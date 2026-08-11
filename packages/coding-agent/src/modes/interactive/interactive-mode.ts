@@ -375,7 +375,6 @@ export class InteractiveMode {
 	private readonly defaultHiddenThinkingLabel = "Thinking...";
 	private hiddenThinkingLabel = this.defaultHiddenThinkingLabel;
 
-	private lastSigintTime = 0;
 	private lastEscapeTime = 0;
 	private changelogMarkdown: string | undefined = undefined;
 	private startupNoticesShown = false;
@@ -761,8 +760,7 @@ export class InteractiveMode {
 
 			const expandedInstructions = [
 				hint("app.interrupt", "to interrupt"),
-				hint("app.clear", "to clear"),
-				rawKeyHint(`${keyText("app.clear")} twice`, "to exit"),
+				rawKeyHint(`${keyText("app.interrupt")} twice`, "to clear"),
 				hint("app.exit", "to exit (empty)"),
 				hint("app.suspend", "to suspend"),
 				keyHint("tui.editor.deleteToLineEnd", "to delete to end"),
@@ -782,7 +780,7 @@ export class InteractiveMode {
 			].join("\n");
 			const compactInstructions = [
 				hint("app.interrupt", "interrupt"),
-				rawKeyHint(`${keyText("app.clear")}/${keyText("app.exit")}`, "clear/exit"),
+				rawKeyHint(`${keyText("app.interrupt")} x2`, "clear/exit"),
 				rawKeyHint("/", "commands"),
 				rawKeyHint("!", "bash"),
 				hint("app.tools.expand", "more"),
@@ -1897,12 +1895,8 @@ export class InteractiveMode {
 		if (elapsed !== undefined) {
 			parts.push(elapsed);
 		}
-		if (status.inputTokens > 0 || status.outputTokens > 0) {
-			const arrow = status.direction === "down" ? "↓" : "↑";
-			const bits: string[] = [];
-			if (status.outputTokens > 0) bits.push(`${arrow} ${formatTokenCount(status.outputTokens)} out`);
-			if (status.inputTokens > 0) bits.push(`↑ ${formatTokenCount(status.inputTokens)} in`);
-			parts.push(bits.join(" · "));
+		if (status.tokens > 0) {
+			parts.push(`${status.direction === "down" ? "↓" : "↑"} ${formatTokenCount(status.tokens)} tokens`);
 		}
 		return parts.join(" · ");
 	}
@@ -2618,27 +2612,23 @@ export class InteractiveMode {
 				this.editor.setText("");
 				this.isBashMode = false;
 				this.updateEditorBorderColor();
-			} else if (!this.editor.getText().trim()) {
-				// Double-escape with empty editor triggers /tree, /fork, or nothing based on setting
-				const action = this.settingsManager.getDoubleEscapeAction();
-				if (action !== "none") {
-					const now = Date.now();
-					if (now - this.lastEscapeTime < 500) {
-						if (action === "tree") {
-							this.showTreeSelector();
-						} else {
-							this.showUserMessageSelector();
-						}
-						this.lastEscapeTime = 0;
+			} else {
+				// Double-escape: clear the editor, or exit if it's already empty
+				const now = Date.now();
+				if (now - this.lastEscapeTime < 500) {
+					if (this.editor.getText().trim()) {
+						this.clearEditor();
 					} else {
-						this.lastEscapeTime = now;
+						void this.shutdown();
 					}
+					this.lastEscapeTime = 0;
+				} else {
+					this.lastEscapeTime = now;
 				}
 			}
 		};
 
 		// Register app action handlers
-		this.defaultEditor.onAction("app.clear", () => this.handleCtrlC());
 		this.defaultEditor.onCtrlD = () => this.handleCtrlD();
 		this.defaultEditor.onAction("app.suspend", () => this.handleCtrlZ());
 		this.defaultEditor.onAction("app.thinking.cycle", () => this.cycleThinkingLevel());
@@ -3537,16 +3527,6 @@ export class InteractiveMode {
 	// Key handlers
 	// =========================================================================
 
-	private handleCtrlC(): void {
-		const now = Date.now();
-		if (now - this.lastSigintTime < 500) {
-			void this.shutdown();
-		} else {
-			this.clearEditor();
-			this.lastSigintTime = now;
-		}
-	}
-
 	private handleCtrlD(): void {
 		// Only called when editor is empty (enforced by CustomEditor)
 		void this.shutdown();
@@ -4196,7 +4176,6 @@ export class InteractiveMode {
 					hideThinkingBlock: this.hideThinkingBlock,
 					collapseChangelog: this.settingsManager.getCollapseChangelog(),
 					enableInstallTelemetry: this.settingsManager.getEnableInstallTelemetry(),
-					doubleEscapeAction: this.settingsManager.getDoubleEscapeAction(),
 					treeFilterMode: this.settingsManager.getTreeFilterMode(),
 					showHardwareCursor: this.settingsManager.getShowHardwareCursor(),
 					showCacheMissNotices: this.settingsManager.getShowCacheMissNotices(),
@@ -4291,9 +4270,6 @@ export class InteractiveMode {
 					},
 					onDefaultProjectTrustChange: (defaultProjectTrust) => {
 						this.settingsManager.setDefaultProjectTrust(defaultProjectTrust);
-					},
-					onDoubleEscapeActionChange: (action) => {
-						this.settingsManager.setDoubleEscapeAction(action);
 					},
 					onTreeFilterModeChange: (mode) => {
 						this.settingsManager.setTreeFilterMode(mode);
@@ -5814,7 +5790,6 @@ export class InteractiveMode {
 
 		// App keybindings
 		const interrupt = this.getAppKeyDisplay("app.interrupt");
-		const clear = this.getAppKeyDisplay("app.clear");
 		const exit = this.getAppKeyDisplay("app.exit");
 		const suspend = this.getAppKeyDisplay("app.suspend");
 		const cycleThinkingLevel = this.getAppKeyDisplay("app.thinking.cycle");
@@ -5858,7 +5833,7 @@ export class InteractiveMode {
 |-----|--------|
 | \`${tab}\` | Path completion / accept autocomplete |
 | \`${interrupt}\` | Cancel autocomplete / abort streaming |
-| \`${clear}\` | Clear editor (first) / exit (second) |
+| \`${interrupt}\` x2 | Clear editor (first) / exit (second) |
 | \`${exit}\` | Exit (when editor is empty) |
 | \`${suspend}\` | Suspend to background |
 | \`${cycleThinkingLevel}\` | Cycle thinking level |
