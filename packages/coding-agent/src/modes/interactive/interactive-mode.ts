@@ -1896,7 +1896,12 @@ export class InteractiveMode {
 			parts.push(elapsed);
 		}
 		if (status.tokens > 0) {
-			parts.push(`${status.direction === "down" ? "↓" : "↑"} ${formatTokenCount(status.tokens)} out`);
+			const inputTokens = this.session.getContextUsage()?.tokens ?? 0;
+			if (inputTokens > 0) {
+				parts.push(`↓ ${formatTokenCount(status.tokens)} · ↑ ${formatTokenCount(inputTokens)}`);
+			} else {
+				parts.push(`↓ ${formatTokenCount(status.tokens)}`);
+			}
 		}
 		return parts.join(" · ");
 	}
