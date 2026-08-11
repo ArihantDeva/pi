@@ -1897,8 +1897,12 @@ export class InteractiveMode {
 		if (elapsed !== undefined) {
 			parts.push(elapsed);
 		}
-		if (status.tokens > 0) {
-			parts.push(`${status.direction === "down" ? "↓" : "↑"} ${formatTokenCount(status.tokens)} tokens`);
+		if (status.inputTokens > 0 || status.outputTokens > 0) {
+			const arrow = status.direction === "down" ? "↓" : "↑";
+			const bits: string[] = [];
+			if (status.outputTokens > 0) bits.push(`${arrow} ${formatTokenCount(status.outputTokens)} out`);
+			if (status.inputTokens > 0) bits.push(`↑ ${formatTokenCount(status.inputTokens)} in`);
+			parts.push(bits.join(" · "));
 		}
 		return parts.join(" · ");
 	}
@@ -3084,6 +3088,12 @@ export class InteractiveMode {
 					this.chatContainer.removeChild(this.streamingComponent);
 					this.streamingComponent = undefined;
 					this.streamingMessage = undefined;
+				}
+				// Resolve tool executions that never completed (interrupted or
+				// errored runs): their pulse timers would otherwise keep ticking
+				// forever, driving full-screen renders and pegging the CPU.
+				for (const [, component] of this.pendingTools) {
+					component.updateResult({ content: [{ type: "text", text: "Interrupted" }], isError: true });
 				}
 				this.pendingTools.clear();
 
@@ -5304,7 +5314,7 @@ export class InteractiveMode {
 
 				onDeviceCode: (info) => {
 					dialog.showDeviceCode(info);
-					dialog.showWaiting("Waiting for authentication...");
+					dialog.showWaiting("Authenticating...");
 				},
 
 				onPrompt: async (prompt: { message: string; placeholder?: string }) => {

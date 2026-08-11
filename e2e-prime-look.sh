@@ -53,6 +53,30 @@ console.log('light-ok');
 " >/tmp/e2e-light.log 2>&1
 if [ $? = 0 ]; then pass "light theme loads, all new tokens render"; else fail "light theme (see /tmp/e2e-light.log)"; cat /tmp/e2e-light.log; fi
 
+say "== e2e-prime-look: activity labels + token tracking =="
+node --input-type=module -e "
+import { AgentActivityTracker, AGENT_ACTIVITY_LABELS } from '$REPO/packages/coding-agent/dist/modes/interactive/agent-activity.js';
+const labels = Object.values(AGENT_ACTIVITY_LABELS);
+if (labels.some((l) => /waiting/i.test(l))) throw new Error('waiting label still present: ' + labels.join(','));
+if (!labels.includes('Working') || !labels.includes('Executing')) throw new Error('expected Working/Executing labels, got: ' + labels.join(','));
+const t = new AgentActivityTracker();
+t.handleEvent({ type: 'message_start', message: { role: 'user', content: 'a'.repeat(400), timestamp: 0 } });
+let st = t.getStatus();
+if (st.activity !== 'working') throw new Error('initial activity not working: ' + st.activity);
+if (st.inputTokens < 90 || st.inputTokens > 110) throw new Error('input estimate wrong: ' + st.inputTokens);
+t.handleEvent({ type: 'message_start', message: { role: 'assistant', content: [], api: 'x', provider: 'chain', model: 'm', usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, cost: { total: 0 } }, stopReason: null, timestamp: 0 } });
+t.handleEvent({ type: 'message_update', message: { role: 'assistant', content: [] }, assistantMessageEvent: { type: 'thinking_delta', delta: 'x'.repeat(80) } });
+st = t.getStatus();
+if (st.activity !== 'thinking') throw new Error('not thinking');
+t.handleEvent({ type: 'message_update', message: { role: 'assistant', content: [] }, assistantMessageEvent: { type: 'text_delta', delta: 'y'.repeat(200) } });
+st = t.getStatus();
+if (st.activity !== 'writing') throw new Error('not writing');
+if (st.outputTokens < 60 || st.outputTokens > 80) throw new Error('output estimate wrong: ' + st.outputTokens);
+if (st.inputTokens <= 0) throw new Error('input tokens lost');
+console.log('activity-ok');
+" >/tmp/e2e-activity.log 2>&1
+if [ $? = 0 ]; then pass "activity labels (no waiting) + input/output token tracking"; else fail "activity (see /tmp/e2e-activity.log)"; cat /tmp/e2e-activity.log; fi
+
 say "== e2e-prime-look: TUI render tests (offline) =="
 cat > /tmp/e2e-ui.mjs <<'EOF'
 import { setThemeInstance, loadThemeFromPath } from "/Users/arihantdeva/Repos/pi-harness/packages/coding-agent/dist/modes/interactive/theme/theme.js";

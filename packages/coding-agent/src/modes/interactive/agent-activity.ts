@@ -7,18 +7,20 @@ import type { AgentSessionEvent } from "../../core/agent-session.ts";
  * Ported from Prime Agent (PrimeIntellect-ai/prime-agent, MIT), adapted to the
  * pi-mono 0.80.x event shapes (AgentSessionEvent / AssistantMessageEvent).
  */
-export type AgentActivity = "waiting" | "thinking" | "writing" | "writing-code" | "executing";
+export type AgentActivity = "working" | "thinking" | "writing" | "writing-code" | "executing";
 
 export interface AgentActivityStatus {
 	activity: AgentActivity;
 	/** "down" while receiving model output, "up" while sending (request in flight or tool executing). */
 	direction: "down" | "up";
+	/** Input tokens for the current turn (authoritative usage when reported, else a char/4 estimate). */
+	inputTokens: number;
 	/** Output tokens accumulated since the user's last message. */
-	tokens: number;
+	outputTokens: number;
 }
 
 export const AGENT_ACTIVITY_LABELS: Record<AgentActivity, string> = {
-	waiting: "Waiting",
+	working: "Working",
 	thinking: "Thinking",
 	writing: "Writing",
 	"writing-code": "Writing code",
@@ -29,10 +31,11 @@ export const AGENT_ACTIVITY_LABELS: Record<AgentActivity, string> = {
 const CHARS_PER_TOKEN_ESTIMATE = 4;
 
 export class AgentActivityTracker {
-	private activity: AgentActivity = "waiting";
+	private activity: AgentActivity = "working";
 	private completedTokens = 0;
 	private streamingUsageTokens = 0;
 	private streamingChars = 0;
+	private inputTokens = 0;
 	private runningToolCount = 0;
 	// Providers like Anthropic only report usage at the start and end of a message, so the
 	// live count leans on the character estimate in between. Keeping the reported value
@@ -42,15 +45,19 @@ export class AgentActivityTracker {
 	handleEvent(event: AgentSessionEvent): void {
 		switch (event.type) {
 			case "agent_start":
-				this.activity = "waiting";
+				this.activity = "working";
 				this.runningToolCount = 0;
 				break;
 
 			case "message_start":
 				if (event.message.role === "user") {
 					this.reset();
+					const content = event.message.content;
+					const text =
+						typeof content === "string" ? content : content.map((c) => ("text" in c ? c.text : "")).join("");
+					this.inputTokens = Math.max(Math.round(text.length / CHARS_PER_TOKEN_ESTIMATE), 1);
 				} else if (event.message.role === "assistant") {
-					this.activity = "waiting";
+					this.activity = "working";
 					this.streamingUsageTokens = 0;
 					this.streamingChars = 0;
 				}
@@ -91,7 +98,7 @@ export class AgentActivityTracker {
 						: this.estimatedStreamingTokens();
 				this.streamingUsageTokens = 0;
 				this.streamingChars = 0;
-				this.activity = "waiting";
+				this.activity = "working";
 				break;
 
 			case "tool_execution_start":
@@ -102,7 +109,7 @@ export class AgentActivityTracker {
 			case "tool_execution_end":
 				this.runningToolCount = Math.max(0, this.runningToolCount - 1);
 				if (this.runningToolCount === 0) {
-					this.activity = "waiting";
+					this.activity = "working";
 				}
 				break;
 
@@ -115,8 +122,9 @@ export class AgentActivityTracker {
 	getStatus(): AgentActivityStatus {
 		return {
 			activity: this.activity,
-			direction: this.activity === "waiting" || this.activity === "executing" ? "up" : "down",
-			tokens: this.reportedTokens,
+			direction: this.activity === "working" || this.activity === "executing" ? "up" : "down",
+			inputTokens: this.inputTokens,
+			outputTokens: this.reportedTokens,
 		};
 	}
 
@@ -125,7 +133,7 @@ export class AgentActivityTracker {
 	}
 
 	reset(): void {
-		this.activity = "waiting";
+		this.activity = "working";
 		this.completedTokens = 0;
 		this.streamingUsageTokens = 0;
 		this.streamingChars = 0;
