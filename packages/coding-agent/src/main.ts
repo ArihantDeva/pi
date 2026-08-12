@@ -575,7 +575,7 @@ export async function main(args: string[], options?: MainOptions) {
 		(envSessionDir ? expandTildePath(envSessionDir) : undefined) ??
 		startupSettingsManager.getSessionDir();
 	let sessionManager = await createSessionManager(parsed, cwd, sessionDir, startupSettingsManager);
-	if (sessionManager.fileEntries.length === 1 && startupSettingsManager.getGlobalSettings().autoUpdateOnNewSession) {
+	if (sessionManager.entryCount === 1 && startupSettingsManager.getGlobalSettings().autoUpdateOnNewSession) {
 		await handlePackageCommand(["update", "--all"], { extensionFactories: options?.extensionFactories });
 	}
 	const missingSessionCwdIssue = getMissingSessionCwdIssue(sessionManager, cwd);
