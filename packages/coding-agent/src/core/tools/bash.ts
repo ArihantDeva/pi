@@ -300,115 +300,6 @@ export const validateCdTargetSpawnHook: BashSpawnHook = ({ command, cwd, env }) 
 	return { command, cwd, env };
 };
 
-// Shell builtins that don't exist as separate executables
-const SHELL_BUILTINS = new Set([
-	"cd",
-	"pwd",
-	"echo",
-	"export",
-	"unset",
-	"alias",
-	"unalias",
-	"source",
-	".",
-	"exit",
-	"return",
-	"break",
-	"continue",
-	"shift",
-	"set",
-	"unset",
-	"readonly",
-	"declare",
-	"typeset",
-	"local",
-	"let",
-	"eval",
-	"exec",
-	"trap",
-	"wait",
-	"jobs",
-	"fg",
-	"bg",
-	"kill",
-	"disown",
-	"suspend",
-	"ulimit",
-	"umask",
-	"hash",
-	"type",
-	"command",
-	"builtin",
-	"enable",
-	"help",
-	"history",
-	"fc",
-	"getopts",
-	"read",
-	"printf",
-	"mapfile",
-	"readarray",
-	"true",
-	"false",
-	":",
-]);
-
-const SHELL_KEYWORDS = new Set([
-	"case",
-	"do",
-	"done",
-	"elif",
-	"else",
-	"esac",
-	"fi",
-	"for",
-	"function",
-	"if",
-	"in",
-	"then",
-	"time",
-	"until",
-	"while",
-]);
-
-function extractSimpleCommandWords(command: string): string[] {
-	const words: string[] = [];
-	for (const segment of splitTopLevelShellCommands(command)) {
-		for (const token of tokenizeShellWords(segment)) {
-			if (/^[A-Za-z_][A-Za-z0-9_]*=/.test(token) || /^\d*(?:>>?|<<|<>)/.test(token)) continue;
-			if (SHELL_KEYWORDS.has(token)) {
-				if (token === "for" || token === "case") break;
-				continue;
-			}
-			if (token === "!" || token === "{" || token === "}" || token.startsWith("$(")) continue;
-			words.push(token);
-			break;
-		}
-	}
-	return words;
-}
-
-/**
- * Validates that external commands exist in PATH before execution.
- * This is diagnostic-only: shell functions, aliases, and custom binaries remain valid.
- */
-export const validateCommandExistsSpawnHook: BashSpawnHook = ({ command, cwd, env }) => {
-	const pathDirs = (env.PATH || "").split(path.delimiter);
-	for (const commandWord of extractSimpleCommandWords(command)) {
-		if (commandWord.startsWith("$") || commandWord.includes("/") || SHELL_BUILTINS.has(commandWord)) continue;
-		const exists = pathDirs.some((directory) => {
-			try {
-				const base = directory ? path.resolve(cwd, directory) : cwd;
-				return fs.existsSync(path.join(base, commandWord));
-			} catch {
-				return false;
-			}
-		});
-		if (!exists) console.warn(`⚠️ Command may not exist in PATH: ${commandWord}`);
-	}
-	return { command, cwd, env };
-};
-
 /**
  * Warns about potentially privileged operations without blocking them.
  * Helps catch accidental sudo/chmod/chown to system directories.
@@ -579,8 +470,8 @@ export function createBashToolDefinition(
 ): ToolDefinition<typeof bashSchema, BashToolDetails | undefined, BashRenderState> {
 	const ops = options?.operations ?? createLocalBashOperations({ shellPath: options?.shellPath });
 	const commandPrefix = options?.commandPrefix;
-	// Default spawn hooks: cd validation + command existence + privileged op warnings
-	const defaultHooks = [validateCdTargetSpawnHook, validateCommandExistsSpawnHook, warnPrivilegedOpsSpawnHook];
+	// Default spawn hooks: cd validation + privileged op warnings
+	const defaultHooks = [validateCdTargetSpawnHook, warnPrivilegedOpsSpawnHook];
 	const userHook = options?.spawnHook;
 	const spawnHook = userHook
 		? (ctx: BashSpawnContext) => defaultHooks.reduce((acc, h) => h(acc), userHook(ctx))

@@ -10,7 +10,6 @@ import {
 	createLocalBashOperations,
 	DEFAULT_BASH_TIMEOUT_MS,
 	validateCdTargetSpawnHook,
-	validateCommandExistsSpawnHook,
 } from "../src/core/tools/bash.ts";
 import { computeEditsDiff } from "../src/core/tools/edit-diff.ts";
 import {
@@ -492,34 +491,6 @@ describe("Coding Agent Tools", () => {
 			);
 		});
 
-		it("should not inspect separators or quoted text as commands", () => {
-			const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
-			try {
-				validateCommandExistsSpawnHook({
-					command: 'printf "%s" "not-a-command; still-not-a-command | also-not-a-command" && pwd',
-					cwd: testDir,
-					env: { PATH: process.env.PATH },
-				});
-				expect(warn).not.toHaveBeenCalled();
-			} finally {
-				warn.mockRestore();
-			}
-		});
-
-		it("should skip assignments and redirections before a command", () => {
-			const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
-			try {
-				validateCommandExistsSpawnHook({
-					command: "FOO=bar 2>/tmp/bash-tool-test-output echo ok",
-					cwd: testDir,
-					env: { PATH: process.env.PATH },
-				});
-				expect(warn).not.toHaveBeenCalled();
-			} finally {
-				warn.mockRestore();
-			}
-		});
-
 		it("should not validate cd text inside quotes", () => {
 			expect(() =>
 				validateCdTargetSpawnHook({
@@ -548,59 +519,6 @@ describe("Coding Agent Tools", () => {
 					env: {},
 				}),
 			).toMatchObject({ command: 'cd "./" && pwd' });
-		});
-
-		it("should warn once for an unresolved command in a chain", () => {
-			const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
-			try {
-				validateCommandExistsSpawnHook({
-					command: "echo ok && definitely-missing-command-xyz",
-					cwd: testDir,
-					env: { PATH: process.env.PATH },
-				});
-				expect(warn).toHaveBeenCalledTimes(1);
-				expect(warn.mock.calls[0]?.[0]).toContain("definitely-missing-command-xyz");
-			} finally {
-				warn.mockRestore();
-			}
-		});
-
-		it("should ignore heredoc bodies when validating commands", () => {
-			const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
-			try {
-				validateCommandExistsSpawnHook({
-					command: [
-						"python3 - <<'PY'",
-						"import json",
-						"def main():",
-						"    print('hi')",
-						"json.dump({}, open('p','w'))",
-						"os.chmod('p', 0o600)",
-						"PY",
-						"echo ok",
-					].join("\n"),
-					cwd: testDir,
-					env: { PATH: process.env.PATH },
-				});
-				expect(warn).not.toHaveBeenCalled();
-			} finally {
-				warn.mockRestore();
-			}
-		});
-
-		it("should still warn for a missing command after a heredoc", () => {
-			const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
-			try {
-				validateCommandExistsSpawnHook({
-					command: ["cat <<'EOF'", "some body text", "EOF", "definitely-missing-command-xyz"].join("\n"),
-					cwd: testDir,
-					env: { PATH: process.env.PATH },
-				});
-				expect(warn).toHaveBeenCalledTimes(1);
-				expect(warn.mock.calls[0]?.[0]).toContain("definitely-missing-command-xyz");
-			} finally {
-				warn.mockRestore();
-			}
 		});
 
 		it("should use the default timeout when one is omitted", async () => {
