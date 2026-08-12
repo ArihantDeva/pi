@@ -797,6 +797,15 @@ export class SessionManager {
 	private flushed: boolean = false;
 	private fileEntries: FileEntry[] = [];
 	private byId: Map<string, SessionEntry> = new Map();
+
+	/**
+	 * Number of entries persisted in the session file. Used by startup logic
+	 * to detect brand-new sessions (header only).
+	 */
+	get entryCount(): number {
+		return this.fileEntries.length;
+	}
+
 	private labelsById: Map<string, string> = new Map();
 	private labelTimestampsById: Map<string, string> = new Map();
 	private leafId: string | null = null;
