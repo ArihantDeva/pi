@@ -491,6 +491,48 @@ describe("Coding Agent Tools", () => {
 			);
 		});
 
+		it("should include elapsed time in timeout error", async () => {
+			const operations: BashOperations = {
+				exec: async (_command, _cwd, { onData }) => {
+					onData(Buffer.from("partial output", "utf-8"));
+					await new Promise((r) => setTimeout(r, 50));
+					throw new Error("timeout:5");
+				},
+			};
+			const bash = createBashTool(testDir, { operations });
+
+			await expect(bash.execute("test-call-timeout-elapsed", { command: "slow" })).rejects.toThrow(
+				/Command timed out after 5 seconds \(elapsed (?:[1-9]\d*(?:\.\d+)?|0\.[1-9]\d*)s\)/,
+			);
+		});
+
+		it("should include non-zero elapsed time in non-zero exit error", async () => {
+			const operations: BashOperations = {
+				exec: async () => {
+					await new Promise((r) => setTimeout(r, 50));
+					return { exitCode: 3 };
+				},
+			};
+			const bash = createBashTool(testDir, { operations });
+
+			await expect(bash.execute("test-call-exit-elapsed", { command: "fail" })).rejects.toThrow(
+				/Command exited with code 3 \(elapsed (?:[1-9]\d*(?:\.\d+)?|0\.[1-9]\d*)s\)/,
+			);
+		});
+
+		it("should not append elapsed to successful output", async () => {
+			const operations: BashOperations = {
+				exec: async (_command, _cwd, { onData }) => {
+					onData(Buffer.from("done", "utf-8"));
+					return { exitCode: 0 };
+				},
+			};
+			const bash = createBashTool(testDir, { operations });
+			const result = await bash.execute("test-call-ok-elapsed", { command: "echo done" });
+
+			expect(getTextOutput(result)).toBe("done");
+		});
+
 		it("should include full output path for truncated timeout and abort errors", async () => {
 			for (const testCase of [
 				{ error: "timeout:5", expected: "Command timed out after 5 seconds" },

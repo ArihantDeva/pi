@@ -198,6 +198,10 @@ function formatDuration(ms: number): string {
 	return `${(ms / 1000).toFixed(1)}s`;
 }
 
+function formatElapsed(startedAt: number): string {
+	return ` (elapsed ${formatDuration(Date.now() - startedAt)})`;
+}
+
 function formatBashCall(args: { command?: string; timeout?: number } | undefined): string {
 	const command = str(args?.command);
 	const timeout = args?.timeout as number | undefined;
@@ -310,6 +314,7 @@ export function createBashToolDefinition(
 		) {
 			const resolvedCommand = commandPrefix ? `${commandPrefix}\n${command}` : command;
 			const spawnContext = resolveSpawnContext(resolvedCommand, cwd, spawnHook);
+			const startedAt = Date.now();
 			const output = new OutputAccumulator({ tempFilePrefix: "pi-bash" });
 			let acceptingOutput = true;
 			let updateTimer: NodeJS.Timeout | undefined;
@@ -412,7 +417,9 @@ export function createBashToolDefinition(
 					}
 					if (err instanceof Error && err.message.startsWith("timeout:")) {
 						const timeoutSecs = err.message.split(":")[1];
-						throw new Error(appendStatus(text, `Command timed out after ${timeoutSecs} seconds`));
+						throw new Error(
+							appendStatus(text, `Command timed out after ${timeoutSecs} seconds${formatElapsed(startedAt)}`),
+						);
 					}
 					throw err;
 				}
@@ -420,7 +427,9 @@ export function createBashToolDefinition(
 				const snapshot = await finishOutput();
 				const { text: outputText, details } = formatOutput(snapshot);
 				if (exitCode !== 0 && exitCode !== null) {
-					throw new Error(appendStatus(outputText, `Command exited with code ${exitCode}`));
+					throw new Error(
+						appendStatus(outputText, `Command exited with code ${exitCode}${formatElapsed(startedAt)}`),
+					);
 				}
 				return { content: [{ type: "text", text: outputText }], details };
 			} finally {
