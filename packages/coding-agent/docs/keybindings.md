@@ -83,7 +83,6 @@ Modifier combinations: `ctrl+shift+x`, `alt+ctrl+x`, `ctrl+shift+alt+x`, `ctrl+1
 | Keybinding id | Default | Description |
 |--------|---------|-------------|
 | `app.interrupt` | `escape` | Cancel / abort |
-| `app.clear` | `ctrl+c` | Clear editor |
 | `app.exit` | `ctrl+d` | Exit (when editor empty) |
 | `app.suspend` | `ctrl+z` (none on Windows) | Suspend to background |
 | `app.editor.external` | `ctrl+g` | Open in external editor (`externalEditor`, `$VISUAL`, `$EDITOR`, Notepad on Windows, or `nano` elsewhere) |

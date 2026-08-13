@@ -301,33 +301,6 @@ export const validateCdTargetSpawnHook: BashSpawnHook = ({ command, cwd, env }) 
 };
 
 /**
- * Warns about potentially privileged operations without blocking them.
- * Helps catch accidental sudo/chmod/chown to system directories.
- */
-export const warnPrivilegedOpsSpawnHook: BashSpawnHook = ({ command, cwd, env }) => {
-	const privilegedPatterns = [
-		/>\s*\/etc\//,
-		/>\s*\/usr\//,
-		/>\s*\/bin\//,
-		/>\s*\/sbin\//,
-		/>\s*\/lib\//,
-		/>\s*\/boot\//,
-		/sudo\s+/,
-		/chmod\s+/,
-		/chown\s+/,
-	];
-
-	for (const pattern of privilegedPatterns) {
-		if (pattern.test(command)) {
-			// Use console.warn so it appears in logs but doesn't block
-			console.warn(`⚠️ Potentially privileged operation: ${command.trim().slice(0, 100)}`);
-			break;
-		}
-	}
-	return { command, cwd, env };
-};
-
-/**
  * Default timeout for bash commands (60 seconds).
  * Can be overridden per-call via the timeout parameter.
  */
@@ -470,8 +443,8 @@ export function createBashToolDefinition(
 ): ToolDefinition<typeof bashSchema, BashToolDetails | undefined, BashRenderState> {
 	const ops = options?.operations ?? createLocalBashOperations({ shellPath: options?.shellPath });
 	const commandPrefix = options?.commandPrefix;
-	// Default spawn hooks: cd validation + privileged op warnings
-	const defaultHooks = [validateCdTargetSpawnHook, warnPrivilegedOpsSpawnHook];
+	// Default spawn hooks: cd validation only (privileged-op warning banner removed per user request)
+	const defaultHooks = [validateCdTargetSpawnHook];
 	const userHook = options?.spawnHook;
 	const spawnHook = userHook
 		? (ctx: BashSpawnContext) => defaultHooks.reduce((acc, h) => h(acc), userHook(ctx))
