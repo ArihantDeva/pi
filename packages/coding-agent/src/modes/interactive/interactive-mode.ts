@@ -103,6 +103,7 @@ import { getPiUserAgent } from "../../utils/pi-user-agent.ts";
 import { killTrackedDetachedChildren } from "../../utils/shell.ts";
 import { ensureTool } from "../../utils/tools-manager.ts";
 import { checkForNewPiVersion, type LatestPiRelease } from "../../utils/version-check.ts";
+import { AGENT_ACTIVITY_LABELS, AgentActivityTracker, formatTokenCount } from "./agent-activity.ts";
 import { ArminComponent } from "./components/armin.ts";
 import { AssistantMessageComponent } from "./components/assistant-message.ts";
 import { BashExecutionComponent } from "./components/bash-execution.ts";
@@ -367,10 +368,13 @@ export class InteractiveMode {
 	private workingVisible = true;
 	private workingIndicatorOptions: WorkingIndicatorOptions | undefined = undefined;
 	private readonly defaultWorkingMessage = "Working...";
+	private readonly activityTracker = new AgentActivityTracker();
+	private workingStartedAt: number | undefined;
+	private workingTimer: ReturnType<typeof setInterval> | undefined;
+
 	private readonly defaultHiddenThinkingLabel = "Thinking...";
 	private hiddenThinkingLabel = this.defaultHiddenThinkingLabel;
 
-	private lastSigintTime = 0;
 	private lastEscapeTime = 0;
 	private changelogMarkdown: string | undefined = undefined;
 	private startupNoticesShown = false;
@@ -756,8 +760,7 @@ export class InteractiveMode {
 
 			const expandedInstructions = [
 				hint("app.interrupt", "to interrupt"),
-				hint("app.clear", "to clear"),
-				rawKeyHint(`${keyText("app.clear")} twice`, "to exit"),
+				rawKeyHint(`${keyText("app.interrupt")} twice`, "to clear"),
 				hint("app.exit", "to exit (empty)"),
 				hint("app.suspend", "to suspend"),
 				keyHint("tui.editor.deleteToLineEnd", "to delete to end"),
@@ -777,7 +780,7 @@ export class InteractiveMode {
 			].join("\n");
 			const compactInstructions = [
 				hint("app.interrupt", "interrupt"),
-				rawKeyHint(`${keyText("app.clear")}/${keyText("app.exit")}`, "clear/exit"),
+				rawKeyHint(`${keyText("app.interrupt")} x2`, "clear/exit"),
 				rawKeyHint("/", "commands"),
 				rawKeyHint("!", "bash"),
 				hint("app.tools.expand", "more"),
@@ -1831,6 +1834,9 @@ export class InteractiveMode {
 	}
 
 	private showStatusIndicator(indicator: StatusIndicator): void {
+		if (this.activeStatusIndicator?.kind === "working") {
+			this.stopWorkingTimer();
+		}
 		this.activeStatusIndicator?.dispose();
 		this.activeStatusIndicator = indicator;
 		this.statusContainer.clear();
@@ -1844,6 +1850,7 @@ export class InteractiveMode {
 		const hadActiveStatusIndicator = this.activeStatusIndicator !== undefined;
 		this.activeStatusIndicator?.dispose();
 		this.activeStatusIndicator = undefined;
+		this.stopWorkingTimer();
 		this.statusContainer.clear();
 		if (hadActiveStatusIndicator && this.ui.getClearOnShrink()) {
 			this.statusContainer.addChild(this.idleStatus);
@@ -1859,12 +1866,9 @@ export class InteractiveMode {
 		}
 		if (this.session.isStreaming && this.activeStatusIndicator?.kind !== "working") {
 			this.showStatusIndicator(
-				new WorkingStatusIndicator(
-					this.ui,
-					this.workingMessage ?? this.defaultWorkingMessage,
-					this.workingIndicatorOptions,
-				),
+				new WorkingStatusIndicator(this.ui, this.getWorkingLoaderMessage(), this.workingIndicatorOptions),
 			);
+			this.startWorkingTimer();
 		}
 		this.ui.requestRender();
 	}
@@ -1875,6 +1879,67 @@ export class InteractiveMode {
 			this.activeStatusIndicator.setIndicator(options);
 		}
 		this.ui.requestRender();
+	}
+
+	private getWorkingLoaderMessage(): string {
+		const elapsed =
+			this.workingStartedAt === undefined
+				? undefined
+				: this.formatWorkingElapsed(Date.now() - this.workingStartedAt);
+		if (this.workingMessage !== undefined) {
+			// Extensions and tool bootstrap own the message; keep the plain "<message> <elapsed>" form.
+			return elapsed === undefined ? this.workingMessage : `${this.workingMessage} ${elapsed}`;
+		}
+		const status = this.activityTracker.getStatus();
+		const parts: string[] = [AGENT_ACTIVITY_LABELS[status.activity]];
+		if (elapsed !== undefined) {
+			parts.push(elapsed);
+		}
+		if (status.tokens > 0) {
+			const inputTokens = this.session.getContextUsage()?.tokens ?? 0;
+			if (inputTokens > 0) {
+				parts.push(`↓ ${formatTokenCount(status.tokens)} · ↑ ${formatTokenCount(inputTokens)}`);
+			} else {
+				parts.push(`↓ ${formatTokenCount(status.tokens)}`);
+			}
+		}
+		return parts.join(" · ");
+	}
+
+	private formatWorkingElapsed(elapsedMs: number): string {
+		const totalSeconds = Math.max(0, Math.floor(elapsedMs / 1000));
+		if (totalSeconds < 60) {
+			return `${totalSeconds}s`;
+		}
+		const minutes = Math.floor(totalSeconds / 60);
+		const seconds = totalSeconds % 60;
+		if (minutes < 60) {
+			return `${minutes}m ${seconds.toString().padStart(2, "0")}s`;
+		}
+		const hours = Math.floor(minutes / 60);
+		const remainingMinutes = minutes % 60;
+		return `${hours}h ${remainingMinutes.toString().padStart(2, "0")}m ${seconds.toString().padStart(2, "0")}s`;
+	}
+
+	private startWorkingTimer(): void {
+		this.stopWorkingTimer();
+		this.workingStartedAt = Date.now();
+		this.workingTimer = setInterval(() => this.updateWorkingLoaderMessage(), 1000);
+		this.workingTimer.unref?.();
+	}
+
+	private stopWorkingTimer(): void {
+		if (this.workingTimer) {
+			clearInterval(this.workingTimer);
+			this.workingTimer = undefined;
+		}
+		this.workingStartedAt = undefined;
+	}
+
+	private updateWorkingLoaderMessage(): void {
+		if (this.activeStatusIndicator?.kind === "working") {
+			this.activeStatusIndicator.setMessage(this.getWorkingLoaderMessage());
+		}
 	}
 
 	private setHiddenThinkingLabel(label?: string): void {
@@ -2552,27 +2617,23 @@ export class InteractiveMode {
 				this.editor.setText("");
 				this.isBashMode = false;
 				this.updateEditorBorderColor();
-			} else if (!this.editor.getText().trim()) {
-				// Double-escape with empty editor triggers /tree, /fork, or nothing based on setting
-				const action = this.settingsManager.getDoubleEscapeAction();
-				if (action !== "none") {
-					const now = Date.now();
-					if (now - this.lastEscapeTime < 500) {
-						if (action === "tree") {
-							this.showTreeSelector();
-						} else {
-							this.showUserMessageSelector();
-						}
-						this.lastEscapeTime = 0;
+			} else {
+				// Double-escape: clear the editor, or exit if it's already empty
+				const now = Date.now();
+				if (now - this.lastEscapeTime < 500) {
+					if (this.editor.getText().trim()) {
+						this.clearEditor();
 					} else {
-						this.lastEscapeTime = now;
+						void this.shutdown();
 					}
+					this.lastEscapeTime = 0;
+				} else {
+					this.lastEscapeTime = now;
 				}
 			}
 		};
 
 		// Register app action handlers
-		this.defaultEditor.onAction("app.clear", () => this.handleCtrlC());
 		this.defaultEditor.onCtrlD = () => this.handleCtrlD();
 		this.defaultEditor.onAction("app.suspend", () => this.handleCtrlZ());
 		this.defaultEditor.onAction("app.thinking.cycle", () => this.cycleThinkingLevel());
@@ -2829,6 +2890,7 @@ export class InteractiveMode {
 		}
 
 		this.footer.invalidate();
+		this.activityTracker.handleEvent(event);
 
 		switch (event.type) {
 			case "agent_start":
@@ -2844,20 +2906,12 @@ export class InteractiveMode {
 				}
 				if (this.workingVisible) {
 					this.showStatusIndicator(
-						new WorkingStatusIndicator(
-							this.ui,
-							this.workingMessage ?? this.defaultWorkingMessage,
-							this.workingIndicatorOptions,
-						),
+						new WorkingStatusIndicator(this.ui, this.getWorkingLoaderMessage(), this.workingIndicatorOptions),
 					);
+					this.startWorkingTimer();
 				} else {
 					this.clearStatusIndicator();
 				}
-				this.ui.requestRender();
-				break;
-
-			case "queue_update":
-				this.updatePendingMessagesDisplay();
 				this.ui.requestRender();
 				break;
 
@@ -3029,6 +3083,12 @@ export class InteractiveMode {
 					this.chatContainer.removeChild(this.streamingComponent);
 					this.streamingComponent = undefined;
 					this.streamingMessage = undefined;
+				}
+				// Resolve tool executions that never completed (interrupted or
+				// errored runs): their pulse timers would otherwise keep ticking
+				// forever, driving full-screen renders and pegging the CPU.
+				for (const [, component] of this.pendingTools) {
+					component.updateResult({ content: [{ type: "text", text: "Interrupted" }], isError: true });
 				}
 				this.pendingTools.clear();
 
@@ -3471,16 +3531,6 @@ export class InteractiveMode {
 	// =========================================================================
 	// Key handlers
 	// =========================================================================
-
-	private handleCtrlC(): void {
-		const now = Date.now();
-		if (now - this.lastSigintTime < 500) {
-			void this.shutdown();
-		} else {
-			this.clearEditor();
-			this.lastSigintTime = now;
-		}
-	}
 
 	private handleCtrlD(): void {
 		// Only called when editor is empty (enforced by CustomEditor)
@@ -4131,7 +4181,6 @@ export class InteractiveMode {
 					hideThinkingBlock: this.hideThinkingBlock,
 					collapseChangelog: this.settingsManager.getCollapseChangelog(),
 					enableInstallTelemetry: this.settingsManager.getEnableInstallTelemetry(),
-					doubleEscapeAction: this.settingsManager.getDoubleEscapeAction(),
 					treeFilterMode: this.settingsManager.getTreeFilterMode(),
 					showHardwareCursor: this.settingsManager.getShowHardwareCursor(),
 					showCacheMissNotices: this.settingsManager.getShowCacheMissNotices(),
@@ -4226,9 +4275,6 @@ export class InteractiveMode {
 					},
 					onDefaultProjectTrustChange: (defaultProjectTrust) => {
 						this.settingsManager.setDefaultProjectTrust(defaultProjectTrust);
-					},
-					onDoubleEscapeActionChange: (action) => {
-						this.settingsManager.setDoubleEscapeAction(action);
 					},
 					onTreeFilterModeChange: (mode) => {
 						this.settingsManager.setTreeFilterMode(mode);
@@ -5249,7 +5295,7 @@ export class InteractiveMode {
 
 				onDeviceCode: (info) => {
 					dialog.showDeviceCode(info);
-					dialog.showWaiting("Waiting for authentication...");
+					dialog.showWaiting("Authenticating...");
 				},
 
 				onPrompt: async (prompt: { message: string; placeholder?: string }) => {
@@ -5749,7 +5795,6 @@ export class InteractiveMode {
 
 		// App keybindings
 		const interrupt = this.getAppKeyDisplay("app.interrupt");
-		const clear = this.getAppKeyDisplay("app.clear");
 		const exit = this.getAppKeyDisplay("app.exit");
 		const suspend = this.getAppKeyDisplay("app.suspend");
 		const cycleThinkingLevel = this.getAppKeyDisplay("app.thinking.cycle");
@@ -5793,7 +5838,7 @@ export class InteractiveMode {
 |-----|--------|
 | \`${tab}\` | Path completion / accept autocomplete |
 | \`${interrupt}\` | Cancel autocomplete / abort streaming |
-| \`${clear}\` | Clear editor (first) / exit (second) |
+| \`${interrupt}\` x2 | Clear editor (first) / exit (second) |
 | \`${exit}\` | Exit (when editor is empty) |
 | \`${suspend}\` | Suspend to background |
 | \`${cycleThinkingLevel}\` | Cycle thinking level |

@@ -68,7 +68,6 @@ import type {
 // Only editor-global shortcuts are reserved here. Picker-specific bindings are not.
 const RESERVED_KEYBINDINGS_FOR_EXTENSION_CONFLICTS = [
 	"app.interrupt",
-	"app.clear",
 	"app.exit",
 	"app.suspend",
 	"app.thinking.cycle",
@@ -826,6 +825,7 @@ export class ExtensionRunner {
 		const ctx = this.createContext();
 		const currentEvent: ToolResultEvent = { ...event };
 		let modified = false;
+		let terminate: boolean | undefined;
 
 		for (const ext of this.extensions) {
 			const handlers = ext.handlers.get("tool_result");
@@ -848,6 +848,9 @@ export class ExtensionRunner {
 						currentEvent.isError = handlerResult.isError;
 						modified = true;
 					}
+					if (handlerResult.terminate !== undefined) {
+						terminate = handlerResult.terminate;
+					}
 				} catch (err) {
 					const message = err instanceof Error ? err.message : String(err);
 					const stack = err instanceof Error ? err.stack : undefined;
@@ -861,7 +864,7 @@ export class ExtensionRunner {
 			}
 		}
 
-		if (!modified) {
+		if (!modified && terminate === undefined) {
 			return undefined;
 		}
 
@@ -869,6 +872,7 @@ export class ExtensionRunner {
 			content: currentEvent.content,
 			details: currentEvent.details,
 			isError: currentEvent.isError,
+			terminate,
 		};
 	}
 

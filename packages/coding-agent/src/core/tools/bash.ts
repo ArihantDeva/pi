@@ -1,7 +1,8 @@
-import { constants } from "node:fs";
+import fs, { constants } from "node:fs";
 import { access as fsAccess } from "node:fs/promises";
+import path from "node:path";
 import type { AgentTool } from "@earendil-works/pi-agent-core";
-import { Container, Text, truncateToWidth } from "@earendil-works/pi-tui";
+import { Container, Text, truncateToWidth, type Component } from "@earendil-works/pi-tui";
 import { spawn } from "child_process";
 import { type Static, Type } from "typebox";
 import { keyHint } from "../../modes/interactive/components/keybinding-hints.ts";
@@ -39,7 +40,7 @@ function resolveTimeoutMs(timeout: number | undefined): number | undefined {
 
 const bashSchema = Type.Object({
 	command: Type.String({ description: "Bash command to execute" }),
-	timeout: Type.Optional(Type.Number({ description: "Timeout in seconds (optional, no default timeout)" })),
+	timeout: Type.Optional(Type.Number({ description: "Timeout in seconds (default: 60)" })),
 });
 
 export type BashToolInput = Static<typeof bashSchema>;
@@ -160,6 +161,151 @@ function resolveSpawnContext(command: string, cwd: string, spawnHook?: BashSpawn
 	return spawnHook ? spawnHook(baseContext) : baseContext;
 }
 
+function splitTopLevelShellCommands(command: string): string[] {
+	const commands: string[] = [];
+	let current = "";
+	let quote: "'" | '"' | undefined;
+	let comment = false;
+	let heredocDelimiter: string | undefined;
+
+	const flush = () => {
+		if (current.trim()) commands.push(current.trim());
+		current = "";
+	};
+
+	// Heredoc opener at end of line, e.g. `cat <<'EOF'`, `<<-PY`, `<<MARKER`.
+	// Body lines must not be parsed as separate commands.
+	const heredocDelimiterOf = (line: string): string | undefined => {
+		const match = /(?:^|[\s;|&])<<-?\s*(?:'([A-Za-z_][A-Za-z0-9_]*)'|"([A-Za-z_][A-Za-z0-9_]*)"|([A-Za-z_][A-Za-z0-9_]*))\s*$/.exec(line);
+		return match ? (match[1] ?? match[2] ?? match[3]) : undefined;
+	};
+
+	for (let i = 0; i < command.length; i++) {
+		const character = command[i];
+		if (heredocDelimiter) {
+			if (character === "\n") {
+				if (current.slice(current.lastIndexOf("\n") + 1).trim() === heredocDelimiter) {
+					heredocDelimiter = undefined;
+					flush();
+					continue;
+				}
+			}
+			current += character;
+			continue;
+		}
+		if (comment) {
+			if (character === "\n") {
+				comment = false;
+				flush();
+			}
+			continue;
+		}
+		if (!quote && character === "#" && (i === 0 || /\s/.test(command[i - 1]))) {
+			comment = true;
+			continue;
+		}
+		if (character === "\\" && quote !== "'") {
+			current += character;
+			if (i + 1 < command.length) current += command[++i];
+			continue;
+		}
+		if (quote) {
+			current += character;
+			if (character === quote) quote = undefined;
+			continue;
+		}
+		if (character === "'" || character === '"') {
+			quote = character;
+			current += character;
+			continue;
+		}
+		if (character === ";" || character === "|" || character === "&" || character === "\n") {
+			if (character === "\n") {
+				const delimiter = heredocDelimiterOf(current);
+				if (delimiter) {
+					heredocDelimiter = delimiter;
+					current += character;
+					continue;
+				}
+			}
+			flush();
+			if (command[i + 1] === character || (character === "&" && command[i + 1] === "&")) i++;
+			continue;
+		}
+		current += character;
+	}
+	flush();
+	return commands;
+}
+
+function tokenizeShellWords(command: string): string[] {
+	const words: string[] = [];
+	let word = "";
+	let quote: "'" | '"' | undefined;
+	let escaped = false;
+
+	const flush = () => {
+		if (word) words.push(word);
+		word = "";
+	};
+
+	for (let i = 0; i < command.length; i++) {
+		const character = command[i];
+		if (escaped) {
+			word += character;
+			escaped = false;
+			continue;
+		}
+		if (character === "\\" && quote !== "'") {
+			escaped = true;
+			continue;
+		}
+		if (quote) {
+			if (character === quote) quote = undefined;
+			else word += character;
+			continue;
+		}
+		if (character === "'" || character === '"') {
+			quote = character;
+			continue;
+		}
+		if (/\s/.test(character)) flush();
+		else word += character;
+	}
+	flush();
+	return words;
+}
+
+/**
+ * Validates cd targets using only top-level command segments.
+ * Quoted text and command arguments are intentionally ignored.
+ */
+export const validateCdTargetSpawnHook: BashSpawnHook = ({ command, cwd, env }) => {
+	let currentCwd = cwd;
+	for (const segment of splitTopLevelShellCommands(command)) {
+		const words = tokenizeShellWords(segment);
+		if (words[0] !== "cd" || !words[1]) continue;
+		const target = words[1];
+		if (target.startsWith("$") || target.startsWith("~") || target === "-" || /[*?[]/.test(target)) continue;
+		const fullPath = path.resolve(currentCwd, target);
+		let isDirectory = false;
+		try {
+			isDirectory = fs.statSync(fullPath).isDirectory();
+		} catch {
+			isDirectory = false;
+		}
+		if (!isDirectory) throw new Error(`cd target does not exist: ${target} (resolved: ${fullPath})`);
+		currentCwd = fullPath;
+	}
+	return { command, cwd, env };
+};
+
+/**
+ * Default timeout for bash commands (60 seconds).
+ * Can be overridden per-call via the timeout parameter.
+ */
+export const DEFAULT_BASH_TIMEOUT_MS = 60_000;
+
 export interface BashToolOptions {
 	/** Custom operations for command execution. Default: local shell */
 	operations?: BashOperations;
@@ -186,6 +332,9 @@ type BashResultRenderState = {
 	cachedSkipped: number | undefined;
 };
 
+
+/** Collapsed render: the compact panel header already shows the command; render nothing below it. */
+const COLLAPSED_EMPTY: Component = { render: () => [], invalidate: () => {} };
 class BashResultRenderComponent extends Container {
 	state: BashResultRenderState = {
 		cachedWidth: undefined,
@@ -298,11 +447,16 @@ export function createBashToolDefinition(
 ): ToolDefinition<typeof bashSchema, BashToolDetails | undefined, BashRenderState> {
 	const ops = options?.operations ?? createLocalBashOperations({ shellPath: options?.shellPath });
 	const commandPrefix = options?.commandPrefix;
-	const spawnHook = options?.spawnHook;
+	// Default spawn hooks: cd validation only (privileged-op warning banner removed per user request)
+	const defaultHooks = [validateCdTargetSpawnHook];
+	const userHook = options?.spawnHook;
+	const spawnHook = userHook
+		? (ctx: BashSpawnContext) => defaultHooks.reduce((acc, h) => h(acc), userHook(ctx))
+		: (ctx: BashSpawnContext) => defaultHooks.reduce((acc, h) => h(acc), ctx);
 	return {
 		name: "bash",
 		label: "bash",
-		description: `Execute a bash command in the current working directory. Returns stdout and stderr. Output is truncated to last ${DEFAULT_MAX_LINES} lines or ${DEFAULT_MAX_BYTES / 1024}KB (whichever is hit first). If truncated, full output is saved to a temp file. Optionally provide a timeout in seconds.`,
+		description: `Execute a bash command in the current working directory. Returns stdout and stderr. Output is truncated to last ${DEFAULT_MAX_LINES} lines or ${DEFAULT_MAX_BYTES / 1024}KB (whichever is hit first). If truncated, full output is saved to a temp file. Commands use a 60-second timeout by default; optionally provide a timeout in seconds.`,
 		promptSnippet: "Execute bash commands (ls, grep, find, etc.)",
 		parameters: bashSchema,
 		async execute(
@@ -402,10 +556,12 @@ export function createBashToolDefinition(
 			try {
 				let exitCode: number | null;
 				try {
+					// Apply default 60s timeout if none specified
+					const effectiveTimeout = timeout ?? DEFAULT_BASH_TIMEOUT_MS / 1000;
 					const result = await ops.exec(spawnContext.command, spawnContext.cwd, {
 						onData: handleData,
 						signal,
-						timeout,
+						timeout: effectiveTimeout,
 						env: spawnContext.env,
 					});
 					exitCode = result.exitCode;
@@ -437,6 +593,10 @@ export function createBashToolDefinition(
 			}
 		},
 		renderCall(args, _theme, context) {
+			if (!context.expanded) {
+				// Collapsed: the compact panel header shows the command; no `$` echo line.
+				return COLLAPSED_EMPTY;
+			}
 			const state = context.state;
 			if (context.executionStarted && state.startedAt === undefined) {
 				state.startedAt = Date.now();
@@ -447,6 +607,10 @@ export function createBashToolDefinition(
 			return text;
 		},
 		renderResult(result, options, _theme, context) {
+			if (!options.expanded) {
+				// Collapsed: header ✓/✗ pulse is the whole story; output on ctrl+o expand.
+				return COLLAPSED_EMPTY;
+			}
 			const state = context.state;
 			if (state.startedAt !== undefined && options.isPartial && !state.interval) {
 				state.interval = setInterval(() => context.invalidate(), 1000);

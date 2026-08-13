@@ -13,7 +13,8 @@ import {
 import type { Readable } from "node:stream";
 import crossSpawn from "cross-spawn";
 
-const EXIT_STDIO_GRACE_MS = 100;
+// Allow detached writers enough scheduler margin without delaying normal close events.
+const EXIT_STDIO_GRACE_MS = 500;
 
 export function spawnProcess(
 	command: string,

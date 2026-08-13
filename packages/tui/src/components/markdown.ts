@@ -121,6 +121,13 @@ export class Markdown implements Component {
 	private cachedWidth?: number;
 	private cachedLines?: string[];
 
+	// Per-token final lines, so append-only streaming re-renders only the tail.
+	// ponytail: reuse stops at the first token whose raw/type/next-type changed;
+	// the marked lexer still runs over the whole text each frame (O(n), ~17ms at
+	// 656K chars) — resume-from-prefix lexing is the upgrade path if that shows up.
+	private cachedTokenLines?: { raw: string; type?: string; nextType?: string; lines: string[] }[];
+	private cachedTokenWidth?: number;
+
 	constructor(
 		text: string,
 		paddingX: number,
@@ -146,6 +153,8 @@ export class Markdown implements Component {
 		this.cachedText = undefined;
 		this.cachedWidth = undefined;
 		this.cachedLines = undefined;
+		this.cachedTokenLines = undefined;
+		this.cachedTokenWidth = undefined;
 	}
 
 	render(width: number): string[] {
@@ -174,51 +183,71 @@ export class Markdown implements Component {
 		const tokens = markdownParser.lexer(normalizedText);
 		trimPartialClosingFences(tokens);
 
-		// Convert tokens to styled terminal output
-		const renderedLines: string[] = [];
-
-		for (let i = 0; i < tokens.length; i++) {
-			const token = tokens[i];
-			const nextToken = tokens[i + 1];
-			const tokenLines = this.renderToken(token, contentWidth, nextToken?.type);
-			for (const tokenLine of tokenLines) {
-				renderedLines.push(tokenLine);
-			}
-		}
-
-		// Wrap lines (NO padding, NO background yet)
-		const wrappedLines: string[] = [];
-		for (const line of renderedLines) {
-			if (isImageLine(line)) {
-				wrappedLines.push(line);
-			} else {
-				for (const wrappedLine of wrapTextWithAnsi(line, contentWidth)) {
-					wrappedLines.push(wrappedLine);
-				}
-			}
-		}
-
 		// Add margins and background to each wrapped line
 		const leftMargin = " ".repeat(this.paddingX);
 		const rightMargin = " ".repeat(this.paddingX);
 		const bgFn = this.defaultTextStyle?.bgColor;
-		const contentLines: string[] = [];
 
-		for (const line of wrappedLines) {
-			if (isImageLine(line)) {
-				contentLines.push(line);
+		/** Render one token's styled lines through wrap + margins + background. */
+		const finalizeTokenLines = (token: Token, nextTokenType?: string): string[] => {
+			const contentLines: string[] = [];
+			const tokenLines = this.renderToken(token, contentWidth, nextTokenType);
+			for (const tokenLine of tokenLines) {
+				if (isImageLine(tokenLine)) {
+					contentLines.push(tokenLine);
+					continue;
+				}
+				for (const wrappedLine of wrapTextWithAnsi(tokenLine, contentWidth)) {
+					if (isImageLine(wrappedLine)) {
+						contentLines.push(wrappedLine);
+						continue;
+					}
+					const lineWithMargins = leftMargin + wrappedLine + rightMargin;
+					if (bgFn) {
+						contentLines.push(applyBackgroundToLine(lineWithMargins, width, bgFn));
+					} else {
+						// No background - just pad to width
+						const visibleLen = visibleWidth(lineWithMargins);
+						const paddingNeeded = Math.max(0, width - visibleLen);
+						contentLines.push(lineWithMargins + " ".repeat(paddingNeeded));
+					}
+				}
+			}
+			return contentLines;
+		};
+
+		// Incremental path: reuse final lines for every unchanged token (streaming
+		// appends only change the last one); re-render from the first change onward.
+		const cached = this.cachedTokenWidth === width ? this.cachedTokenLines ?? [] : [];
+		const tokenLines: { raw: string; type?: string; nextType?: string; lines: string[] }[] = [];
+		for (let i = 0; i < tokens.length; i++) {
+			const token = tokens[i];
+			const nextType = tokens[i + 1]?.type;
+			const prev = cached[i];
+			if (prev && prev.raw === token.raw && prev.type === token.type && prev.nextType === nextType) {
+				tokenLines.push(prev);
 				continue;
 			}
+			// First change: re-render this token and everything after it.
+			for (let j = i; j < tokens.length; j++) {
+				const t = tokens[j];
+				const nt = tokens[j + 1]?.type;
+				tokenLines.push({
+					raw: t.raw,
+					type: t.type,
+					nextType: nt,
+					lines: finalizeTokenLines(t, nt),
+				});
+			}
+			break;
+		}
+		this.cachedTokenLines = tokenLines;
+		this.cachedTokenWidth = width;
 
-			const lineWithMargins = leftMargin + line + rightMargin;
-
-			if (bgFn) {
-				contentLines.push(applyBackgroundToLine(lineWithMargins, width, bgFn));
-			} else {
-				// No background - just pad to width
-				const visibleLen = visibleWidth(lineWithMargins);
-				const paddingNeeded = Math.max(0, width - visibleLen);
-				contentLines.push(lineWithMargins + " ".repeat(paddingNeeded));
+		const contentLines: string[] = [];
+		for (const entry of tokenLines) {
+			for (const line of entry.lines) {
+				contentLines.push(line);
 			}
 		}
 

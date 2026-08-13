@@ -100,7 +100,13 @@ function formatFindResult(
 	if (resultLimit || truncation?.truncated) {
 		const warnings: string[] = [];
 		if (resultLimit) warnings.push(`${resultLimit} results limit`);
-		if (truncation?.truncated) warnings.push(`${formatSize(truncation.maxBytes ?? DEFAULT_MAX_BYTES)} limit`);
+		if (truncation?.truncated) {
+			warnings.push(
+				truncation.truncatedBy === "lines"
+					? `${truncation.maxLines ?? 500} lines limit`
+					: `${formatSize(truncation.maxBytes ?? DEFAULT_MAX_BYTES)} limit`,
+			);
+		}
 		text += `\n${theme.fg("warning", `[Truncated: ${warnings.join(", ")}]`)}`;
 	}
 	return text;
@@ -114,7 +120,7 @@ export function createFindToolDefinition(
 	return {
 		name: "find",
 		label: "find",
-		description: `Search for files by glob pattern. Returns matching file paths relative to the search directory. Respects .gitignore. Output is truncated to ${DEFAULT_LIMIT} results or ${DEFAULT_MAX_BYTES / 1024}KB (whichever is hit first).`,
+		description: `Search for files by glob pattern. Returns matching file paths relative to the search directory. Respects .gitignore. Output is truncated to ${DEFAULT_LIMIT} results, 500 lines, or ${DEFAULT_MAX_BYTES / 1024}KB (whichever is hit first).`,
 		promptSnippet: "Find files by glob pattern (respects .gitignore)",
 		parameters: findSchema,
 		async execute(
@@ -186,7 +192,7 @@ export function createFindToolDefinition(
 							});
 							const resultLimitReached = relativized.length >= effectiveLimit;
 							const rawOutput = relativized.join("\n");
-							const truncation = truncateHead(rawOutput, { maxLines: Number.MAX_SAFE_INTEGER });
+							const truncation = truncateHead(rawOutput, { maxLines: 500, maxBytes: DEFAULT_MAX_BYTES });
 							let resultOutput = truncation.content;
 							const details: FindToolDetails = {};
 							const notices: string[] = [];
@@ -195,7 +201,11 @@ export function createFindToolDefinition(
 								details.resultLimitReached = effectiveLimit;
 							}
 							if (truncation.truncated) {
-								notices.push(`${formatSize(DEFAULT_MAX_BYTES)} limit reached`);
+								const limitHit =
+									truncation.truncatedBy === "lines"
+										? `${truncation.maxLines ?? 500} lines`
+										: `${formatSize(truncation.maxBytes ?? DEFAULT_MAX_BYTES)}`;
+								notices.push(`${limitHit} limit reached`);
 								details.truncation = truncation;
 							}
 							if (notices.length > 0) {
@@ -321,7 +331,7 @@ export function createFindToolDefinition(
 
 							const resultLimitReached = relativized.length >= effectiveLimit;
 							const rawOutput = relativized.join("\n");
-							const truncation = truncateHead(rawOutput, { maxLines: Number.MAX_SAFE_INTEGER });
+							const truncation = truncateHead(rawOutput, { maxLines: 500, maxBytes: DEFAULT_MAX_BYTES });
 							let resultOutput = truncation.content;
 							const details: FindToolDetails = {};
 							const notices: string[] = [];
@@ -332,7 +342,11 @@ export function createFindToolDefinition(
 								details.resultLimitReached = effectiveLimit;
 							}
 							if (truncation.truncated) {
-								notices.push(`${formatSize(DEFAULT_MAX_BYTES)} limit reached`);
+								const limitHit =
+									truncation.truncatedBy === "lines"
+										? `${truncation.maxLines ?? 500} lines`
+										: `${formatSize(truncation.maxBytes ?? DEFAULT_MAX_BYTES)}`;
+								notices.push(`${limitHit} limit reached`);
 								details.truncation = truncation;
 							}
 							if (notices.length > 0) {

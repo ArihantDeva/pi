@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- Added the Codex GPT-5.6 `ultra` thinking level for Sol and Terra, including CLI/model-pattern selection; Luna remains capped at `max`.
+
 ## [0.80.6] - 2026-07-09
 
 ### New Features

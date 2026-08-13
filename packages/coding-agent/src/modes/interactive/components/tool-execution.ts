@@ -1,18 +1,39 @@
-import { Box, type Component, Container, getCapabilities, Image, Spacer, Text, type TUI } from "@earendil-works/pi-tui";
+import {
+	type Component,
+	Container,
+	getCapabilities,
+	Image,
+	Spacer,
+	Text,
+	type TUI,
+	truncateToWidth,
+} from "@earendil-works/pi-tui";
 import type { ToolDefinition, ToolRenderContext } from "../../../core/extensions/types.ts";
 import { createAllToolDefinitions, type ToolName } from "../../../core/tools/index.ts";
 import { getTextOutput as getRenderedTextOutput } from "../../../core/tools/render-utils.ts";
 import { convertToPng } from "../../../utils/image-convert.ts";
 import { theme } from "../theme/theme.ts";
+import {
+	getWorkingPulseFrame,
+	setWorkingPulseFrame,
+	WORKING_ICON_INTERVAL_MS,
+	workingIconFrame,
+} from "../theme/working-icon.ts";
+import { ToolPanel } from "./tool-panel.ts";
 
 export interface ToolExecutionOptions {
 	showImages?: boolean;
 	imageWidthCells?: number;
 }
 
+/**
+ * Compact tool execution block: a single status header line (pulse / ✓ / ✗ +
+ * tool name + one-line args) on a subtle panel background, followed by the
+ * tool's own call/result content. Ported from Prime Agent's tool-panel
+ * presentation — no tall bordered box.
+ */
 export class ToolExecutionComponent extends Container {
-	private contentBox: Box;
-	private contentText: Text;
+	private panel: ToolPanel;
 	private selfRenderContainer: Container;
 	private callRendererComponent?: Component;
 	private resultRendererComponent?: Component;
@@ -39,6 +60,7 @@ export class ToolExecutionComponent extends Container {
 	};
 	private convertedImages: Map<number, { data: string; mimeType: string }> = new Map();
 	private hideComponent = false;
+	private pulseTimer: ReturnType<typeof setInterval> | undefined;
 
 	constructor(
 		toolName: string,
@@ -62,17 +84,13 @@ export class ToolExecutionComponent extends Container {
 
 		this.addChild(new Spacer(1));
 
-		// Always create all shell variants. contentBox is used for default renderer-based composition.
-		// selfRenderContainer is used when the tool renders its own framing.
-		// contentText is reserved for generic fallback rendering when no tool definition exists.
-		this.contentBox = new Box(1, 1, (text: string) => theme.bg("toolPendingBg", text));
-		this.contentText = new Text("", 1, 1, (text: string) => theme.bg("toolPendingBg", text));
+		this.panel = new ToolPanel();
 		this.selfRenderContainer = new Container();
 
 		if (this.hasRendererDefinition()) {
-			this.addChild(this.getRenderShell() === "self" ? this.selfRenderContainer : this.contentBox);
+			this.addChild(this.getRenderShell() === "self" ? this.selfRenderContainer : this.panel);
 		} else {
-			this.addChild(this.contentText);
+			this.addChild(this.panel);
 		}
 
 		this.updateDisplay();
@@ -144,6 +162,19 @@ export class ToolExecutionComponent extends Container {
 		return new Text(theme.fg("toolOutput", output), 0, 0);
 	}
 
+	/** One-line args summary for the header: up to 3 string/number values, truncated. */
+	private compactArgs(): string {
+		const args = this.args;
+		if (!args || typeof args !== "object") return "";
+		const vals: string[] = [];
+		for (const value of Object.values(args)) {
+			if (typeof value === "string") vals.push(value.length > 64 ? `${value.slice(0, 64)}…` : value);
+			else if (typeof value === "number" || typeof value === "boolean") vals.push(String(value));
+			if (vals.length >= 3) break;
+		}
+		return truncateToWidth(vals.join(", "), 80);
+	}
+
 	updateArgs(args: any): void {
 		this.args = args;
 		this.updateDisplay();
@@ -169,7 +200,9 @@ export class ToolExecutionComponent extends Container {
 		},
 		isPartial = false,
 	): void {
-		this.result = result;
+		// Some event producers pass results without a `content` array; normalize so
+		// downstream renderers never crash on `.filter`.
+		this.result = { ...result, content: result.content ?? [] };
 		this.isPartial = isPartial;
 		this.updateDisplay();
 		this.maybeConvertImagesForKitty();
@@ -215,6 +248,7 @@ export class ToolExecutionComponent extends Container {
 
 	override invalidate(): void {
 		super.invalidate();
+		this.panel.invalidate();
 		this.updateDisplay();
 	}
 
@@ -251,34 +285,44 @@ export class ToolExecutionComponent extends Container {
 	}
 
 	private updateDisplay(): void {
-		const bgFn = this.isPartial
-			? (text: string) => theme.bg("toolPendingBg", text)
-			: this.result?.isError
-				? (text: string) => theme.bg("toolErrorBg", text)
-				: (text: string) => theme.bg("toolSuccessBg", text);
+		const pending = this.isPartial || this.result === undefined;
+
+		// Header: animated pulse while pending, ✓ on success, ✗ on error.
+		let statusGlyph: string;
+		if (pending) {
+			statusGlyph = theme.fg("accent", workingIconFrame(getWorkingPulseFrame()));
+			this.startPulseTimer();
+		} else {
+			statusGlyph = this.result?.isError ? theme.fg("error", "✗") : theme.fg("success", "✓");
+			this.stopPulseTimer();
+		}
+		const name = theme.fg("toolTitle", theme.bold(this.toolName));
+		const argsLine = this.compactArgs();
+		this.panel.setHeader(`${statusGlyph} ${name}${argsLine ? ` ${theme.fg("dim", argsLine)}` : ""}`);
 
 		let hasContent = false;
 		this.hideComponent = false;
-		if (this.hasRendererDefinition()) {
-			const renderContainer = this.getRenderShell() === "self" ? this.selfRenderContainer : this.contentBox;
-			if (renderContainer instanceof Box) {
-				renderContainer.setBgFn(bgFn);
-			}
-			renderContainer.clear();
+		this.panel.clear();
 
+		if (this.hasRendererDefinition()) {
+			if (this.getRenderShell() === "self") {
+				this.selfRenderContainer.clear();
+				this.rebuildSelfContainer();
+				return;
+			}
 			const callRenderer = this.getCallRenderer();
 			if (!callRenderer) {
-				renderContainer.addChild(this.createCallFallback());
+				this.panel.addChild(this.createCallFallback());
 				hasContent = true;
 			} else {
 				try {
 					const component = callRenderer(this.args, theme, this.getRenderContext(this.callRendererComponent));
 					this.callRendererComponent = component;
-					renderContainer.addChild(component);
+					this.panel.addChild(component);
 					hasContent = true;
 				} catch {
 					this.callRendererComponent = undefined;
-					renderContainer.addChild(this.createCallFallback());
+					this.panel.addChild(this.createCallFallback());
 					hasContent = true;
 				}
 			}
@@ -288,7 +332,7 @@ export class ToolExecutionComponent extends Container {
 				if (!resultRenderer) {
 					const component = this.createResultFallback();
 					if (component) {
-						renderContainer.addChild(component);
+						this.panel.addChild(component);
 						hasContent = true;
 					}
 				} else {
@@ -300,21 +344,20 @@ export class ToolExecutionComponent extends Container {
 							this.getRenderContext(this.resultRendererComponent),
 						);
 						this.resultRendererComponent = component;
-						renderContainer.addChild(component);
+						this.panel.addChild(component);
 						hasContent = true;
 					} catch {
 						this.resultRendererComponent = undefined;
 						const component = this.createResultFallback();
 						if (component) {
-							renderContainer.addChild(component);
+							this.panel.addChild(component);
 							hasContent = true;
 						}
 					}
 				}
 			}
 		} else {
-			this.contentText.setCustomBgFn(bgFn);
-			this.contentText.setText(this.formatToolExecution());
+			this.panel.addChild(new Text(this.formatToolExecution(), 1, 0));
 			hasContent = true;
 		}
 
@@ -356,6 +399,64 @@ export class ToolExecutionComponent extends Container {
 		if (this.hasRendererDefinition() && !hasContent && this.imageComponents.length === 0) {
 			this.hideComponent = true;
 		}
+	}
+
+	private rebuildSelfContainer(): void {
+		const callRenderer = this.getCallRenderer();
+		if (!callRenderer) {
+			this.selfRenderContainer.addChild(this.createCallFallback());
+			return;
+		}
+		try {
+			const component = callRenderer(this.args, theme, this.getRenderContext(this.callRendererComponent));
+			this.callRendererComponent = component;
+			this.selfRenderContainer.addChild(component);
+		} catch {
+			this.callRendererComponent = undefined;
+			this.selfRenderContainer.addChild(this.createCallFallback());
+		}
+		if (this.result) {
+			const resultRenderer = this.getResultRenderer();
+			if (resultRenderer) {
+				try {
+					const component = resultRenderer(
+						{ content: this.result.content as any, details: this.result.details },
+						{ expanded: this.expanded, isPartial: this.isPartial },
+						theme,
+						this.getRenderContext(this.resultRendererComponent),
+					);
+					this.resultRendererComponent = component;
+					this.selfRenderContainer.addChild(component);
+				} catch {
+					this.resultRendererComponent = undefined;
+				}
+			} else {
+				const component = this.createResultFallback();
+				if (component) {
+					this.selfRenderContainer.addChild(component);
+				}
+			}
+		}
+	}
+
+	private startPulseTimer(): void {
+		if (this.pulseTimer) return;
+		this.pulseTimer = setInterval(() => {
+			setWorkingPulseFrame(getWorkingPulseFrame() + 1);
+			this.ui.requestRender();
+		}, WORKING_ICON_INTERVAL_MS);
+		this.pulseTimer.unref?.();
+	}
+
+	private stopPulseTimer(): void {
+		if (this.pulseTimer) {
+			clearInterval(this.pulseTimer);
+			this.pulseTimer = undefined;
+		}
+	}
+
+	dispose(): void {
+		this.stopPulseTimer();
 	}
 
 	private getTextOutput(): string {

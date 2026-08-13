@@ -4,7 +4,13 @@ import { tmpdir } from "os";
 import { join } from "path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { executeBashWithOperations } from "../src/core/bash-executor.ts";
-import { type BashOperations, createBashTool, createLocalBashOperations } from "../src/core/tools/bash.ts";
+import {
+	type BashOperations,
+	createBashTool,
+	createLocalBashOperations,
+	DEFAULT_BASH_TIMEOUT_MS,
+	validateCdTargetSpawnHook,
+} from "../src/core/tools/bash.ts";
 import { computeEditsDiff } from "../src/core/tools/edit-diff.ts";
 import {
 	createEditTool,
@@ -614,6 +620,67 @@ describe("Coding Agent Tools", () => {
 			await expect(bashTool.execute("test-call-9", { command: "exit 1" })).rejects.toThrow(
 				/(Command failed|code 1)/,
 			);
+		});
+
+		it("should not validate cd text inside quotes", () => {
+			expect(() =>
+				validateCdTargetSpawnHook({
+					command: 'echo "cd /definitely-missing-directory-xyz"',
+					cwd: testDir,
+					env: {},
+				}),
+			).not.toThrow();
+		});
+
+		it("should ignore cd text inside shell comments", () => {
+			expect(() =>
+				validateCdTargetSpawnHook({
+					command: "echo ok; # comment; cd /definitely-missing-directory-xyz",
+					cwd: testDir,
+					env: {},
+				}),
+			).not.toThrow();
+		});
+
+		it("should accept a quoted existing cd target", () => {
+			expect(
+				validateCdTargetSpawnHook({
+					command: 'cd "./" && pwd',
+					cwd: testDir,
+					env: {},
+				}),
+			).toMatchObject({ command: 'cd "./" && pwd' });
+		});
+
+		it("should use the default timeout when one is omitted", async () => {
+			let receivedTimeout: number | undefined;
+			const bash = createBashTool(testDir, {
+				operations: {
+					exec: async (_command, _cwd, options) => {
+						receivedTimeout = options.timeout;
+						return { exitCode: 0 };
+					},
+				},
+			});
+
+			await bash.execute("test-call-default-timeout", { command: "echo ok" });
+			expect(receivedTimeout).toBe(DEFAULT_BASH_TIMEOUT_MS / 1000);
+		});
+
+		it("should apply the user spawn hook before built-in diagnostics", async () => {
+			let receivedCommand = "";
+			const bash = createBashTool(testDir, {
+				spawnHook: (context) => ({ ...context, command: "echo rewritten" }),
+				operations: {
+					exec: async (command) => {
+						receivedCommand = command;
+						return { exitCode: 0 };
+					},
+				},
+			});
+
+			await bash.execute("test-call-hook-order", { command: "echo original" });
+			expect(receivedCommand).toBe("echo rewritten");
 		});
 
 		it("should respect timeout", async () => {

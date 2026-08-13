@@ -236,13 +236,13 @@ Current behavior:
 
 ### Thinking Level Map
 
-Use `thinkingLevelMap` on a model to describe model-specific thinking controls. Keys are pi thinking levels: `off`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`. Maps may contain holes; for example, a model can expose `high` and `max` without exposing `xhigh`.
+Use `thinkingLevelMap` on a model to describe model-specific thinking controls. Keys are pi thinking levels: `off`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max`, `ultra`. Maps may contain holes; for example, a model can expose `high` and `max` without exposing `xhigh`. Codex GPT-5.6 Sol and Terra expose `ultra`; Codex Luna does not.
 
 Values are tristate:
 
 | Value | Meaning |
 |-------|---------|
-| omitted | Standard levels through `high` use the provider's default mapping; extended `xhigh` and `max` levels are unsupported |
+| omitted | Standard levels through `high` use the provider's default mapping; extended `xhigh`, `max`, and `ultra` levels are unsupported |
 | string | Level is supported and this value is sent to the provider |
 | `null` | Level is unsupported and hidden/skipped/clamped away |
 

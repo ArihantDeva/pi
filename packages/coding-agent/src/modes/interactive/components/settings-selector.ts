@@ -37,6 +37,7 @@ const THINKING_DESCRIPTIONS: Record<ThinkingLevel, string> = {
 	high: "Deep reasoning (~16k tokens)",
 	xhigh: "Extra-high reasoning (~32k tokens)",
 	max: "Maximum reasoning",
+	ultra: "Ultra reasoning with automatic task delegation",
 };
 
 const DEFAULT_PROJECT_TRUST_LABELS: Record<DefaultProjectTrust, string> = {
@@ -69,7 +70,6 @@ export interface SettingsConfig {
 	showCacheMissNotices: boolean;
 	collapseChangelog: boolean;
 	enableInstallTelemetry: boolean;
-	doubleEscapeAction: "fork" | "tree" | "none";
 	treeFilterMode: "default" | "no-tools" | "user-only" | "labeled-only" | "all";
 	showHardwareCursor: boolean;
 	editorPaddingX: number;
@@ -100,7 +100,6 @@ export interface SettingsCallbacks {
 	onShowCacheMissNoticesChange: (shown: boolean) => void;
 	onCollapseChangelogChange: (collapsed: boolean) => void;
 	onEnableInstallTelemetryChange: (enabled: boolean) => void;
-	onDoubleEscapeActionChange: (action: "fork" | "tree" | "none") => void;
 	onTreeFilterModeChange: (mode: "default" | "no-tools" | "user-only" | "labeled-only" | "all") => void;
 	onShowHardwareCursorChange: (enabled: boolean) => void;
 	onEditorPaddingXChange: (padding: number) => void;
@@ -560,13 +559,6 @@ export class SettingsSelectorComponent extends Container {
 				values: Object.values(DEFAULT_PROJECT_TRUST_LABELS),
 			},
 			{
-				id: "double-escape-action",
-				label: "Double-escape action",
-				description: "Action when pressing Escape twice with empty editor",
-				currentValue: config.doubleEscapeAction,
-				values: ["tree", "fork", "none"],
-			},
-			{
 				id: "tree-filter-mode",
 				label: "Tree filter mode",
 				description: "Default filter when opening /tree",
@@ -793,9 +785,6 @@ export class SettingsSelectorComponent extends Container {
 						}
 						break;
 					}
-					case "double-escape-action":
-						callbacks.onDoubleEscapeActionChange(newValue as "fork" | "tree");
-						break;
 					case "tree-filter-mode":
 						callbacks.onTreeFilterModeChange(
 							newValue as "default" | "no-tools" | "user-only" | "labeled-only" | "all",

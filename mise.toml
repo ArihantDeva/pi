@@ -1,0 +1,35 @@
+# Canonical local/CI gates for coding-agent reliability work.
+# Keep commands here so local and GitHub validation share one entry point.
+
+[tasks.coding-agent-fast]
+description = "Run the focused coding-agent developer suite"
+run = "npm --prefix packages/coding-agent test -- test/tools.test.ts --reporter=dot"
+
+[tasks.coding-agent-release]
+description = "Run repository check, test, and build gates"
+run = [
+  "npm run check",
+  "./test.sh",
+  "npm --prefix packages/tui run build",
+  "npm exec -- tsgo -p packages/ai/tsconfig.build.json",
+  "npm --prefix packages/agent run build",
+  "npm --prefix packages/coding-agent run build",
+  "npm --prefix packages/orchestrator run build",
+]
+
+[tasks.coding-agent-verify]
+description = "Run the exact release-readiness verification sequence"
+depends = ["coding-agent-release"]
+run = "echo coding-agent verification complete"
+
+[tasks.coding-agent-affected]
+description = "Run the narrowest safe suite for changed coding-agent files"
+run = "node scripts/affected-coding-agent.mjs"
+
+[tasks.coding-agent-no-cache]
+description = "Run release gates with an isolated temporary npm cache"
+run = "node scripts/no-cache-coding-agent.mjs"
+
+[tasks.coding-agent-bootstrap-parallel]
+description = "Run independent bootstrap checks concurrently with status preservation"
+run = "node scripts/parallel-bootstrap-check.mjs"

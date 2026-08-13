@@ -16,7 +16,10 @@
 		"toolPendingBg": "#e8e8f0",
 		"toolSuccessBg": "#e8f0e8",
 		"toolErrorBg": "#f0e8e8",
-		"customMsgBg": "#ede7f6"
+		"customMsgBg": "#ede7f6",
+		"toolPanelBg": "#e8e8e8",
+		"toolDiffAddedBg": "#e8f0e8",
+		"toolDiffRemovedBg": "#f0e8e8"
 	},
 	"colors": {
 		"accent": "teal",
@@ -76,7 +79,11 @@
 		"thinkingXhigh": "#8b008b",
 		"thinkingMax": "#af005f",
 
-		"bashMode": "green"
+		"bashMode": "green",
+		"toolDiffAddedBg": "toolDiffAddedBg",
+		"toolDiffRemovedBg": "toolDiffRemovedBg",
+		"toolPanelBg": "toolPanelBg",
+		"toolDiffText": "#1f2328"
 	},
 	"export": {
 		"pageBg": "#f8f8f8",

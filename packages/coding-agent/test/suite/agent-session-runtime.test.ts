@@ -85,7 +85,12 @@ describe("AgentSessionRuntime characterization", () => {
 				noThemes: true,
 			},
 		};
-		const createRuntime: CreateAgentSessionRuntimeFactory = async ({ cwd, sessionManager, sessionStartEvent }) => {
+		const createRuntime: CreateAgentSessionRuntimeFactory = async ({
+			cwd,
+			sessionManager,
+			sessionStartEvent,
+			model,
+		}) => {
 			const services = await createAgentSessionServices({
 				...runtimeOptions,
 				cwd,
@@ -95,7 +100,7 @@ describe("AgentSessionRuntime characterization", () => {
 					services,
 					sessionManager,
 					sessionStartEvent,
-					model: runtimeOptions.model,
+					model: model ?? runtimeOptions.model,
 					thinkingLevel: runtimeOptions.thinkingLevel,
 				})),
 				services,
@@ -204,6 +209,16 @@ describe("AgentSessionRuntime characterization", () => {
 			{ type: "session_shutdown", reason: "resume", targetSessionFile: originalSessionFile },
 			{ type: "session_start", reason: "resume", previousSessionFile: secondSessionFile },
 		]);
+	});
+
+	it("preserves the active model when starting a new session", async () => {
+		const { runtime, faux } = await createRuntimeForTest(() => {});
+		await runtime.session.setModel(faux.models[1]);
+
+		await runtime.newSession();
+		await runtime.session.bindExtensions({});
+
+		expect(runtime.session.model?.id).toBe(faux.models[1].id);
 	});
 
 	it("honors session_before_switch cancellation for new and resume", async () => {

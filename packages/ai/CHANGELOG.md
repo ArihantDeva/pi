@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- Added model-specific `ultra` thinking support for Codex GPT-5.6 Sol and Terra; Codex Luna remains available through `max`.
+
 ## [0.80.6] - 2026-07-09
 
 ### Added

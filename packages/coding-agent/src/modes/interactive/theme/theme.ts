@@ -55,6 +55,9 @@ const ThemeJsonSchema = Type.Object({
 		toolPendingBg: ColorValueSchema,
 		toolSuccessBg: ColorValueSchema,
 		toolErrorBg: ColorValueSchema,
+		toolDiffAddedBg: ColorValueSchema,
+		toolDiffRemovedBg: ColorValueSchema,
+		toolPanelBg: ColorValueSchema,
 		toolTitle: ColorValueSchema,
 		toolOutput: ColorValueSchema,
 		// Markdown (10 colors)
@@ -136,6 +139,10 @@ export type ThemeColor =
 	| "toolDiffAdded"
 	| "toolDiffRemoved"
 	| "toolDiffContext"
+	| "toolDiffAddedBg"
+	| "toolDiffRemovedBg"
+	| "toolPanelBg"
+	| "toolDiffText"
 	| "syntaxComment"
 	| "syntaxKeyword"
 	| "syntaxFunction"
@@ -160,7 +167,10 @@ export type ThemeBg =
 	| "customMessageBg"
 	| "toolPendingBg"
 	| "toolSuccessBg"
-	| "toolErrorBg";
+	| "toolErrorBg"
+	| "toolDiffAddedBg"
+	| "toolDiffRemovedBg"
+	| "toolPanelBg";
 
 type ColorMode = "truecolor" | "256color";
 
@@ -420,6 +430,7 @@ export class Theme {
 			case "xhigh":
 				return (str: string) => this.fg("thinkingXhigh", str);
 			case "max":
+			case "ultra":
 				return (str: string) => this.fg("thinkingMax", str);
 			default:
 				return (str: string) => this.fg("thinkingOff", str);
@@ -606,6 +617,9 @@ function createTheme(themeJson: ThemeJson, mode?: ColorMode, sourcePath?: string
 		"toolPendingBg",
 		"toolSuccessBg",
 		"toolErrorBg",
+		"toolDiffAddedBg",
+		"toolDiffRemovedBg",
+		"toolPanelBg",
 	]);
 	for (const [key, value] of Object.entries(resolvedColors)) {
 		if (bgColorKeys.has(key)) {

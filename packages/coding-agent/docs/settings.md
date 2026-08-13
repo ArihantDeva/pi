@@ -29,7 +29,7 @@ Use `/trust` in interactive mode to save a project trust decision for future ses
 |---------|------|---------|-------------|
 | `defaultProvider` | string | - | Default provider (e.g., `"anthropic"`, `"openai"`) |
 | `defaultModel` | string | - | Default model ID |
-| `defaultThinkingLevel` | string | - | `"off"`, `"minimal"`, `"low"`, `"medium"`, `"high"`, `"xhigh"`, `"max"` |
+| `defaultThinkingLevel` | string | - | `"off"`, `"minimal"`, `"low"`, `"medium"`, `"high"`, `"xhigh"`, `"max"`, `"ultra"` |
 | `hideThinkingBlock` | boolean | `false` | Hide thinking blocks in output |
 | `showCacheMissNotices` | boolean | `false` | Show transcript notices for significant prompt-cache misses |
 | `thinkingBudgets` | object | - | Custom token budgets per thinking level |
@@ -59,7 +59,6 @@ Use `/trust` in interactive mode to save a project trust decision for future ses
 | `enableInstallTelemetry` | boolean | `true` | Send an anonymous install/update version ping after first install or changelog-detected updates. This does not control update checks |
 | `enableAnalytics` | boolean | `false` | Opt-in analytics data sharing. Currently only asked for during the experimental first-time setup (`PI_EXPERIMENTAL=1`) |
 | `trackingId` | string | - | Analytics tracking identifier, generated when `enableAnalytics` is turned on |
-| `doubleEscapeAction` | string | `"tree"` | Action for double-escape: `"tree"`, `"fork"`, or `"none"` |
 | `treeFilterMode` | string | `"default"` | Default filter for `/tree`: `"default"`, `"no-tools"`, `"user-only"`, `"labeled-only"`, `"all"` |
 | `editorPaddingX` | number | `0` | Horizontal padding for input editor (0-3) |
 | `outputPad` | number | `1` | Horizontal padding for user messages, assistant messages, and thinking (0 or 1) |

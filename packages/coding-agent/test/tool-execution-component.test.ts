@@ -508,4 +508,23 @@ describe("ToolExecutionComponent parity", () => {
 			expect(collapsed.indexOf(":120-329")).toBeLessThan(collapsed.indexOf("to expand"));
 		});
 	}
+
+	test("renders without crashing when a result has no content array", () => {
+		const component = new ToolExecutionComponent(
+			"custom_tool",
+			"tool-no-content",
+			{},
+			{},
+			createBaseToolDefinition(),
+			createFakeTui(),
+			process.cwd(),
+		);
+
+		// Regression: some event producers emit results without `content`;
+		// updateResult + render used to throw `Cannot read properties of undefined (reading 'filter')`.
+		expect(() => {
+			component.updateResult({ isError: true } as any);
+			component.render(120);
+		}).not.toThrow();
+	});
 });
