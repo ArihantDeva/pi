@@ -1070,6 +1070,8 @@ export interface ToolResultEventResult {
 	content?: (TextContent | ImageContent)[];
 	details?: unknown;
 	isError?: boolean;
+	/** Hint that the agent should stop after the current tool batch (ask-style tools that must stay pinned last). */
+	terminate?: boolean;
 }
 
 export interface MessageEndEventResult {

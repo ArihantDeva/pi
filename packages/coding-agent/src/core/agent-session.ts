@@ -466,6 +466,7 @@ export class AgentSession {
 				content: hookResult.content,
 				details: hookResult.details,
 				isError: hookResult.isError ?? isError,
+				terminate: hookResult.terminate,
 			};
 		};
 	}
