@@ -128,6 +128,55 @@ describe("Coding Agent Tools", () => {
 			expect(output).not.toContain("Use offset=");
 		});
 
+		it("should fail soft with guidance when offset is beyond end of file", async () => {
+			const testFile = join(testDir, "offset-beyond.txt");
+			const lines = Array.from({ length: 10 }, (_, i) => `Line ${i + 1}`);
+			writeFileSync(testFile, lines.join("\n"));
+
+			// offset 50 is far beyond the 10-line file
+			const result = await readTool.execute("test-call-5b", { path: testFile, offset: 50 });
+			const output = getTextOutput(result);
+
+			expect(output).toContain("Offset 50 is beyond end of file (10 lines total)");
+			expect(output).toMatch(/use offset=1|offset is 1-indexed/);
+			// Should not throw: result is ok, not an error
+			expect(result.details).toBeUndefined();
+		});
+
+		it("should fail soft when offset is exactly one past the end", async () => {
+			const testFile = join(testDir, "offset-past-one.txt");
+			const lines = Array.from({ length: 5 }, (_, i) => `Line ${i + 1}`);
+			writeFileSync(testFile, lines.join("\n"));
+
+			const result = await readTool.execute("test-call-5c", { path: testFile, offset: 6 });
+			const output = getTextOutput(result);
+
+			expect(output).toContain("Offset 6 is beyond end of file (5 lines total)");
+		});
+
+		it("should count trailing newline file correctly in offset guidance", async () => {
+			const testFile = join(testDir, "offset-trailing-newline.txt");
+			const lines = Array.from({ length: 3 }, (_, i) => `Line ${i + 1}`);
+			writeFileSync(testFile, lines.join("\n") + "\n");
+
+			// offset 4 would hit the phantom trailing empty line; guidance must say 3
+			const result = await readTool.execute("test-call-5d", { path: testFile, offset: 4 });
+			const output = getTextOutput(result);
+
+			expect(output).toContain("Offset 4 is beyond end of file (3 lines total)");
+			expect(output).toContain("offset=3 for the last line");
+		});
+
+		it("should report empty file without offset guidance", async () => {
+			const testFile = join(testDir, "empty.txt");
+			writeFileSync(testFile, "");
+
+			const result = await readTool.execute("test-call-5e", { path: testFile, offset: 1 });
+			const output = getTextOutput(result);
+
+			expect(output).toContain("File is empty");
+		});
+
 		it("should handle limit parameter", async () => {
 			const testFile = join(testDir, "limit-test.txt");
 			const lines = Array.from({ length: 100 }, (_, i) => `Line ${i + 1}`);
@@ -161,13 +210,14 @@ describe("Coding Agent Tools", () => {
 			expect(output).toContain("[40 more lines in file. Use offset=61 to continue.]");
 		});
 
-		it("should show error when offset is beyond file length", async () => {
+		it("should show guidance when offset is beyond file length", async () => {
 			const testFile = join(testDir, "short.txt");
 			writeFileSync(testFile, "Line 1\nLine 2\nLine 3");
 
-			await expect(readTool.execute("test-call-8", { path: testFile, offset: 100 })).rejects.toThrow(
-				/Offset 100 is beyond end of file \(3 lines total\)/,
-			);
+			const result = await readTool.execute("test-call-8", { path: testFile, offset: 100 });
+			const output = getTextOutput(result);
+			expect(output).toContain("Offset 100 is beyond end of file (3 lines total)");
+			expect(output).toContain("use offset=1 to read from the top");
 		});
 
 		it("should include truncation details when truncated", async () => {
@@ -867,6 +917,19 @@ describe("Coding Agent Tools", () => {
 	});
 
 	describe("grep tool", () => {
+		it("should fail soft with guidance when search path does not exist", async () => {
+			const missing = join(testDir, "does-not-exist-xyz");
+
+			const result = await grepTool.execute("test-call-11b", {
+				pattern: "match",
+				path: missing,
+			});
+			const output = getTextOutput(result);
+
+			expect(output).toContain(`Path not found: ${missing}`);
+			expect(output).toMatch(/verify|moved|deleted/);
+		});
+
 		it("should include filename when searching a single file", async () => {
 			const testFile = join(testDir, "example.txt");
 			writeFileSync(testFile, "first line\nmatch line\nlast line");
