@@ -254,26 +254,72 @@ function countOccurrences(content: string, oldText: string): number {
 	return fuzzyContent.split(fuzzyOldText).length - 1;
 }
 
-function getNotFoundError(path: string, editIndex: number, totalEdits: number): Error {
-	if (totalEdits === 1) {
-		return new Error(
-			`Could not find the exact text in ${path}. The old text must match exactly including all whitespace and newlines.`,
-		);
-	}
-	return new Error(
-		`Could not find edits[${editIndex}] in ${path}. The oldText must match exactly including all whitespace and newlines.`,
-	);
+/** Line numbers (1-indexed) of every occurrence of oldText in content. */
+function occurrenceLines(content: string, oldText: string): number[] {
+	const lines = content.split("\n");
+	const fuzzyLines = lines.map((l) => normalizeForFuzzyMatch(l));
+	const fuzzyOldText = normalizeForFuzzyMatch(oldText);
+	const out: number[] = [];
+	fuzzyLines.forEach((fuzzyLine, i) => {
+		if (fuzzyLine.includes(fuzzyOldText)) out.push(i + 1);
+	});
+	return out;
 }
 
-function getDuplicateError(path: string, editIndex: number, totalEdits: number, occurrences: number): Error {
-	if (totalEdits === 1) {
-		return new Error(
-			`Found ${occurrences} occurrences of the text in ${path}. The text must be unique. Please provide more context to make it unique.`,
-		);
+/**
+ * Best-effort similar line suggestion for stale-anchor recovery. Returns the
+ * file line (trimmed) closest to oldText under a cheap normalized similarity
+ * (shared prefix + length delta), or undefined when nothing is close.
+ * ponytail: prefix+length heuristic, good enough for anchor recovery; swap for
+ * a real edit-distance if false suggestions show up in practice.
+ */
+function suggestClosestLine(content: string, oldText: string): string | undefined {
+	const target = normalizeForFuzzyMatch(oldText.trim());
+	if (!target) return undefined;
+	const lines = content.split("\n");
+	let best: { score: number; line: string } | undefined;
+	for (const raw of lines) {
+		const line = normalizeForFuzzyMatch(raw.trim());
+		if (!line) continue;
+		let prefix = 0;
+		const max = Math.min(line.length, target.length);
+		while (prefix < max && line[prefix] === target[prefix]) prefix++;
+		const score = prefix - Math.abs(line.length - target.length);
+		if (score > 0 && (!best || score > best.score)) best = { score, line: raw.trim() };
 	}
-	return new Error(
-		`Found ${occurrences} occurrences of edits[${editIndex}] in ${path}. Each oldText must be unique. Please provide more context to make it unique.`,
-	);
+	if (!best || best.score < 2) return undefined;
+	return best.line;
+}
+
+function getNotFoundError(
+	content: string,
+	path: string,
+	editIndex: number,
+	totalEdits: number,
+	oldText: string,
+): Error {
+	const suggestion = suggestClosestLine(content, oldText);
+	const suggestionText = suggestion ? ` Did you mean: "${suggestion}"?` : "";
+	const base =
+		totalEdits === 1 ? `Could not find the exact text in ${path}.` : `Could not find edits[${editIndex}] in ${path}.`;
+	return new Error(`${base}${suggestionText} The old text must match exactly including all whitespace and newlines.`);
+}
+
+function getDuplicateError(
+	content: string,
+	path: string,
+	editIndex: number,
+	totalEdits: number,
+	occurrences: number,
+	oldText: string,
+): Error {
+	const lines = occurrenceLines(content, oldText);
+	const lineText = lines.length > 0 ? ` Occurrences are on lines ${lines.join(", ")}.` : "";
+	const base =
+		totalEdits === 1
+			? `Found ${occurrences} occurrences of the text in ${path}.`
+			: `Found ${occurrences} occurrences of edits[${editIndex}] in ${path}.`;
+	return new Error(`${base}${lineText} The text must be unique. Please provide more context to make it unique.`);
 }
 
 function getEmptyOldTextError(path: string, editIndex: number, totalEdits: number): Error {
@@ -326,12 +372,12 @@ export function applyEditsToNormalizedContent(
 		const edit = normalizedEdits[i];
 		const matchResult = fuzzyFindText(replacementBaseContent, edit.oldText);
 		if (!matchResult.found) {
-			throw getNotFoundError(path, i, normalizedEdits.length);
+			throw getNotFoundError(replacementBaseContent, path, i, normalizedEdits.length, edit.oldText);
 		}
 
 		const occurrences = countOccurrences(replacementBaseContent, edit.oldText);
 		if (occurrences > 1) {
-			throw getDuplicateError(path, i, normalizedEdits.length, occurrences);
+			throw getDuplicateError(replacementBaseContent, path, i, normalizedEdits.length, occurrences, edit.oldText);
 		}
 
 		matchedEdits.push({
