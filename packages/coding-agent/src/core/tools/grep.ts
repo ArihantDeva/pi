@@ -181,7 +181,17 @@ export function createGrepToolDefinition(
 						try {
 							isDirectory = await ops.isDirectory(searchPath);
 						} catch {
-							settle(() => reject(new Error(`Path not found: ${searchPath}`)));
+							settle(() =>
+								resolve({
+									content: [
+										{
+											type: "text",
+											text: `Path not found: ${searchPath}. The path may have moved or been deleted; verify it with ls/find, then retry grep.`,
+										},
+									],
+									details: undefined,
+								}),
+							);
 							return;
 						}
 
