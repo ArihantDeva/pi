@@ -304,7 +304,62 @@ describe("Coding Agent Tools", () => {
 					path: missingFile,
 					edits: [{ oldText: "hello", newText: "world" }],
 				}),
-			).rejects.toThrow(`Could not edit file: ${missingFile}. Error code: ENOENT.`);
+			).rejects.toThrow(`Could not edit file: ${missingFile}. Error code: ENOENT File does not exist`);
+		});
+
+		it("should include actionable hint for ENOENT edit errors", async () => {
+			const missingFile = join(testDir, "missing-hint.txt");
+
+			await expect(
+				editTool.execute("test-call-6c", {
+					path: missingFile,
+					edits: [{ oldText: "hello", newText: "world" }],
+				}),
+			).rejects.toThrow(/file does not exist.*(create|check the path)/i);
+		});
+
+		it("should include actionable hint for EACCES edit errors", async () => {
+			const readOnlyFile = join(testDir, "readonly-hint.txt");
+			writeFileSync(readOnlyFile, "hello\n");
+			chmodSync(readOnlyFile, 0o444);
+
+			await expect(
+				editTool.execute("test-call-6d", {
+					path: readOnlyFile,
+					edits: [{ oldText: "hello", newText: "world" }],
+				}),
+			).rejects.toThrow(/permission|read-only|not writable/i);
+
+			chmodSync(readOnlyFile, 0o644);
+		});
+
+		it("should include actionable hint for EISDIR edit errors", async () => {
+			await expect(
+				editTool.execute("test-call-6e", {
+					path: testDir,
+					edits: [{ oldText: "hello", newText: "world" }],
+				}),
+			).rejects.toThrow(/directory|not a file/i);
+		});
+
+		it("should not append hint for unknown edit error codes", async () => {
+			const operations = {
+				access: async () => {},
+				readFile: async () => {
+					const err = new Error("disk offline") as NodeJS.ErrnoException;
+					err.code = "UNKNOWN_CODE_XYZ";
+					throw err;
+				},
+				writeFile: async () => {},
+			};
+			const editToolCustom = createEditTool(testDir, { operations });
+
+			await expect(
+				editToolCustom.execute("test-call-6f", {
+					path: join(testDir, "unknown.txt"),
+					edits: [{ oldText: "hello", newText: "world" }],
+				}),
+			).rejects.toThrow(`Could not edit file: ${join(testDir, "unknown.txt")}. Error code: UNKNOWN_CODE_XYZ.`);
 		});
 
 		it("should fail if text appears multiple times", async () => {
@@ -431,7 +486,7 @@ describe("Coding Agent Tools", () => {
 					path: testFile,
 					edits: [{ oldText: "hello", newText: "world" }],
 				}),
-			).rejects.toThrow(`Could not edit file: ${testFile}. Error code: EACCES.`);
+			).rejects.toThrow(`Could not edit file: ${testFile}. Error code: EACCES Permission denied`);
 		});
 
 		it("should include the original error message for unknown edit access errors", async () => {

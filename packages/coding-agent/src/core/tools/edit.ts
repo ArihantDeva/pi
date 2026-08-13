@@ -20,6 +20,22 @@ import {
 	stripBom,
 } from "./edit-diff.ts";
 import { withFileMutationQueue } from "./file-mutation-queue.ts";
+
+/** Actionable guidance appended to edit errors so the model can self-correct. */
+function editErrorHint(code: unknown): string | undefined {
+	switch (code) {
+		case "ENOENT":
+			return "File does not exist at this path; check the path or create the file first";
+		case "EACCES":
+		case "EPERM":
+			return "Permission denied; the file may be read-only or not writable by this user";
+		case "EISDIR":
+			return "Path is a directory; point edit at a file";
+		default:
+			return undefined;
+	}
+}
+
 import { resolveToCwd } from "./path-utils.ts";
 import { renderToolPath, str } from "./render-utils.ts";
 import { wrapToolDefinition } from "./tool-definition-wrapper.ts";
@@ -320,21 +336,23 @@ export function createEditToolDefinition(
 
 				throwIfAborted();
 
-				// Check if file exists.
+				// Check if file exists, then read it (readFile throws EISDIR for
+				// directories, EACCES if unreadable).
+				let rawContent: string;
 				try {
 					await ops.access(absolutePath);
+					throwIfAborted();
+
+					const buffer = await ops.readFile(absolutePath);
+					rawContent = buffer.toString("utf-8");
+					throwIfAborted();
 				} catch (error: unknown) {
 					throwIfAborted();
-					const errorMessage =
-						error instanceof Error && "code" in error ? `Error code: ${error.code}` : String(error);
-					throw new Error(`Could not edit file: ${path}. ${errorMessage}.`);
+					const code = error instanceof Error && "code" in error ? error.code : undefined;
+					const errorMessage = code !== undefined ? `Error code: ${code}` : String(error);
+					const hint = code !== undefined ? editErrorHint(code) : undefined;
+					throw new Error(`Could not edit file: ${path}. ${errorMessage}${hint ? ` ${hint}` : ""}.`);
 				}
-				throwIfAborted();
-
-				// Read the file.
-				const buffer = await ops.readFile(absolutePath);
-				const rawContent = buffer.toString("utf-8");
-				throwIfAborted();
 
 				// Strip BOM before matching. The model will not include an invisible BOM in oldText.
 				const { bom, text: content } = stripBom(rawContent);
