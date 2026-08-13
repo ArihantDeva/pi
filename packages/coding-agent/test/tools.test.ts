@@ -157,7 +157,7 @@ describe("Coding Agent Tools", () => {
 		it("should count trailing newline file correctly in offset guidance", async () => {
 			const testFile = join(testDir, "offset-trailing-newline.txt");
 			const lines = Array.from({ length: 3 }, (_, i) => `Line ${i + 1}`);
-			writeFileSync(testFile, lines.join("\n") + "\n");
+			writeFileSync(testFile, `${lines.join("\n")}\n`);
 
 			// offset 4 would hit the phantom trailing empty line; guidance must say 3
 			const result = await readTool.execute("test-call-5d", { path: testFile, offset: 4 });
@@ -344,6 +344,32 @@ describe("Coding Agent Tools", () => {
 					edits: [{ oldText: "nonexistent", newText: "testing" }],
 				}),
 			).rejects.toThrow(/Could not find the exact text/);
+		});
+
+		it("should suggest closest line when oldText not found", async () => {
+			const testFile = join(testDir, "edit-fuzzy-hint.txt");
+			const originalContent = "alpha\nbeta\ngamma\n";
+			writeFileSync(testFile, originalContent);
+
+			await expect(
+				editTool.execute("test-call-6f", {
+					path: testFile,
+					edits: [{ oldText: "betaaa", newText: "BETA" }],
+				}),
+			).rejects.toThrow(/Did you mean.*"beta"/);
+		});
+
+		it("should list occurrence line numbers for ambiguous oldText", async () => {
+			const testFile = join(testDir, "edit-ambig-hint.txt");
+			const originalContent = "foo\nbar\nfoo\nfoo\n";
+			writeFileSync(testFile, originalContent);
+
+			await expect(
+				editTool.execute("test-call-6g", {
+					path: testFile,
+					edits: [{ oldText: "foo", newText: "baz" }],
+				}),
+			).rejects.toThrow(/Found 3 occurrences.*lines 1, 3, 4/);
 		});
 
 		it("should include ENOENT when the edit target does not exist", async () => {
